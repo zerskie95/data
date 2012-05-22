@@ -231,7 +231,6 @@ var waitingOn = function(manager, object) {
   var observer = function() {
     if (get(object, 'id')) {
       manager.send('doneWaitingOn', object);
-      Ember.removeObserver(object, 'id', observer);
     }
   };
 
@@ -469,8 +468,10 @@ var DirtyState = DS.State.extend({
       doneWaitingOn: function(manager, object) {
         var record = get(manager, 'record'),
             pendingQueue = get(record, 'pendingQueue'),
-            objectGuid = guidFor(object);
+            objectGuid = guidFor(object),
+            observer = pendingQueue[objectGuid][1];
 
+        Ember.removeObserver(object, 'id', observer);
         delete pendingQueue[objectGuid];
 
         if (isEmptyObject(pendingQueue)) {
