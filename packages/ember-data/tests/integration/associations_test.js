@@ -129,7 +129,6 @@ test("it is possible to add an item to an association, remove it, then add it ag
         if (count === 1) {
           strictEqual(type, Person, "should first try to save the parent");
           record.set('id', 1);
-          debugger;
           store.didCreateRecord(record);
         } else if (count === 2) {
           strictEqual(record, tag1, "should then save first tag");
@@ -157,6 +156,6 @@ test("it is possible to add an item to an association, remove it, then add it ag
 
   store.commit();
 
-  equal(getPath(person, 'tags.length'), 2, "object is removed from the association");
+  equal(getPath(person, 'tags.length'), 2, "association is correctly populated");
 });
 

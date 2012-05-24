@@ -293,14 +293,14 @@ DS.Model = Ember.Object.extend(Ember.Evented, {
       if (association.kind === 'hasMany') {
         cachedValue = this.cacheFor(name);
 
-        if (cachedValue) {
+        if (cachedValue && !get(cachedValue, 'isDirty')) {
           var key = association.options.key || name,
               ids = data.get(key) || [];
           var clientIds = Ember.ArrayUtils.map(ids, function(id) {
             return store.clientIdForId(association.type, id);
           });
 
-          set(cachedValue, 'content', Ember.A(clientIds));
+          cachedValue.stateManager.send('update', Ember.A(clientIds));
           cachedValue.fetch();
         }
       }
