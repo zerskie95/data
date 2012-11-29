@@ -104,7 +104,7 @@ DS.OneToManyChange.prototype = {
   getBelongsToName: function() {
     var name = this.belongsToName, store = this.store, parent;
 
-    if (!name) {
+    if (name === undefined) {
       parent = this.oldParent || this.newParent;
       if (!parent) { return; }
 
@@ -228,7 +228,7 @@ DS.OneToManyChange.prototype = {
     // without being removed from its old ManyArray. Below, this method will
     // ensure (via `removeObject`) that the record is no longer in the old
     // ManyArray.
-    if (oldParentClientId === undefined) {
+    if (belongsToName && oldParentClientId === undefined) {
       // Since the child was added to a ManyArray, we know it was materialized.
       oldParent = get(child, belongsToName);
 
@@ -313,7 +313,7 @@ DS.OneToManyChange.prototype = {
       }
     }
 
-    if (child) {
+    if (belongsToName && child) {
       // Only set the belongsTo on the child if it is not already the
       // newParent. This happens if the change happened from the
       // ManyArray side.
@@ -362,11 +362,18 @@ function inverseBelongsToName(parentType, childType, hasManyName) {
   var options = parentType.metaForProperty(hasManyName).options;
   var belongsToName;
 
+  // If a specific inverse name has been specified, just use that.
   if (belongsToName = options.inverse) {
     return belongsToName;
+  } else if (options.inverse === null) {
+    // If the inverse has been specifically disabled, don't
+    // return a value.
+    return null;
+  } else {
+    // Otherwise, fall back to scanning the inverse type, looking
+    // for the first relationship that could be an inverse.
+    return DS._inverseNameFor(childType, parentType, 'belongsTo');
   }
-
-  return DS._inverseNameFor(childType, parentType, 'belongsTo');
 }
 
 function inverseHasManyName(parentType, childType, belongsToName) {

@@ -327,7 +327,8 @@ DS._inverseNameFor = function(modelType, inverseModelType, inverseAssociationKin
     }
   }
 
-  if (actual) { return actual.name; }
+  Ember.assert("Could not find inverse " + inverseAssociationKind + " relationship of type " + inverseModelType + " on " + modelType, actual);
+  return actual.name;
 };
 
 /**

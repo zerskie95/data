@@ -90,3 +90,23 @@ test("When a record's belongsTo relationship is set, it can specify the inverse 
   equal(post.get('youComments.length'), 1, "youComments had the post added");
   equal(post.get('everyoneWeKnowComments.length'), 0, "everyoneWeKnowComments has no posts");
 });
+
+test("A hasMany relationship can specify that it does not have an inverse", function() {
+  // This test ensures that this functionality works without
+  // raising an exception.
+
+  expect(0);
+  Post = DS.Model.extend();
+  Comment = DS.Model.extend();
+
+  Post.reopen({
+    comments: DS.hasMany(Comment, {
+      inverse: null
+    })
+  });
+
+  var comment = store.createRecord(Comment);
+  var post = store.createRecord(Post);
+
+  post.get('comments').pushObject(comment);
+});
