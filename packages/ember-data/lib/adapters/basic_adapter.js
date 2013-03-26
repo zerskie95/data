@@ -1,10 +1,12 @@
+/*jshint newcap:false*/
+
 var normalizer = requireModule('json-normalizer'),
     Processor = normalizer.Processor,
     camelizeKeys = normalizer.camelizeKeys;
 
 var capitalize = Ember.String.capitalize;
 
-var DataProcessor = function() {
+function DataProcessor() {
   Processor.apply(this, arguments);
 }
 
@@ -41,7 +43,7 @@ ArrayProcessor.prototype = {
 
     return this;
   }
-}
+};
 
 var transforms = {};
 
@@ -65,7 +67,7 @@ DS.process = function(json) {
   } else {
     return new DataProcessor(json);
   }
-}
+};
 
 function ObjectLoader(store, type) {
   return function(object) {
@@ -78,7 +80,7 @@ function ObjectLoader(store, type) {
     }
 
     store.load(type, json);
-  }
+  };
 }
 
 function ArrayLoader(store, type, queryArray) {
@@ -96,7 +98,7 @@ function ArrayLoader(store, type, queryArray) {
     });
 
     queryArray.load(references);
-  }
+  };
 }
 
 function HasManyLoader(store, record, relationship) {
@@ -113,6 +115,12 @@ function HasManyLoader(store, record, relationship) {
 
     store.loadMany(relationship.type, json);
     store.loadHasMany(record, relationship.key, ids);
+  };
+}
+
+function didSave(store, record) {
+  return function(data) {
+    store.didSaveRecord(record, data);
   };
 }
 
@@ -136,7 +144,6 @@ DS.BasicAdapter = DS.Adapter.extend({
   },
 
   findHasMany: function(store, record, relationship, data) {
-    debugger;
     var name = capitalize(relationship.key),
         sync = record.constructor.sync,
         load = HasManyLoader(store, record, relationship);
@@ -157,19 +164,21 @@ DS.BasicAdapter = DS.Adapter.extend({
 
   createRecord: function(store, type, record) {
     var sync = type.sync;
-    sync.createRecord(record, saveProcessorFactory(store, type));
+    sync.createRecord(record, didSave(store, record));
   },
 
   updateRecord: function(store, type, record) {
     var sync = type.sync;
-    sync.updateRecord(record, saveProcessorFactory(store, type, true));
+    sync.updateRecord(record, didSave(store, record));
   },
 
   deleteRecord: function(store, type, record) {
     var sync = type.sync;
-    sync.deleteRecord(record, saveProcessorFactory(store, type, true));
+    sync.deleteRecord(record, didSave(store, record));
   }
 });
+
+var registeredTransforms = {};
 
 DS.registerTransforms = function(kind, object) {
   registeredTransforms[kind] = object;
