@@ -1,176 +1,118 @@
-var camelize = Ember.String.camelize,
-    capitalize = Ember.String.capitalize,
-    get = Ember.get,
-    map = Ember.ArrayPolyfills.map,
-    registeredTransforms;
+var normalizer = requireModule('json-normalizer'),
+    Processor = normalizer.Processor,
+    camelizeKeys = normalizer.camelizeKeys;
 
-var passthruTransform = {
-  serialize: function(value) { return value; },
-  deserialize: function(value) { return value; }
-};
+var capitalize = Ember.String.capitalize;
 
-var defaultTransforms = {
-  string: passthruTransform,
-  boolean: passthruTransform,
-  number: passthruTransform
-};
-
-function camelizeKeys(json) {
-  var value;
-
-  for (var prop in json) {
-    value = json[prop];
-    delete json[prop];
-    json[camelize(prop)] = value;
-  }
+var DataProcessor = function() {
+  Processor.apply(this, arguments);
 }
 
-function munge(json, callback) {
-  callback(json);
-}
+DataProcessor.prototype = Ember.create(Processor.prototype);
 
-function applyTransforms(json, type, transformType) {
-  var transforms = registeredTransforms[transformType];
-
-  Ember.assert("You are trying to apply the '" + transformType + "' transforms, but you didn't register any transforms with that name", transforms);
-
-  get(type, 'attributes').forEach(function(name, attribute) {
-    var attributeType = attribute.type,
-        value = json[name];
-
-    var transform = transforms[attributeType] || defaultTransforms[attributeType];
-
-    Ember.assert("Your model specified the '" + attributeType + "' type for the '" + name + "' attribute, but no transform for that type was registered", transform);
-
-    json[name] = transform.deserialize(value);
-  });
-}
-
-function ObjectProcessor(json, type, store) {
-  this.json = json;
-  this.type = type;
-  this.store = store;
-}
-
-ObjectProcessor.prototype = {
-  camelizeKeys: function() {
-    camelizeKeys(this.json);
-    return this;
-  },
-
-  munge: function(callback) {
-    munge(this.json, callback);
-    return this;
-  },
-
-  applyTransforms: function(transformType) {
-    applyTransforms(this.json, this.type, transformType);
+Ember.merge(DataProcessor.prototype, {
+  munge: function(callback, binding) {
+    callback.call(binding, this.json);
     return this;
   }
-};
+});
 
-function LoadObjectProcessor() {
-  ObjectProcessor.apply(this, arguments);
-}
-
-LoadObjectProcessor.prototype = Ember.create(ObjectProcessor.prototype);
-
-LoadObjectProcessor.prototype.load = function() {
-  this.store.load(this.type, {}, this.json);
-};
-
-function loadObjectProcessorFactory(store, type) {
-  return function(json) {
-    return new LoadObjectProcessor(json, type, store);
-  };
-}
-
-function ArrayProcessor(json, type, array, store) {
-  this.json = json;
-  this.type = type;
+function ArrayProcessor(array) {
   this.array = array;
-  this.store = store;
 }
 
 ArrayProcessor.prototype = {
-  load: function() {
-    var store = this.store,
-        type = this.type;
-
-    var references = this.json.map(function(object) {
-      return store.load(type, {}, object);
-    });
-
-    this.array.load(references);
-  },
+  constructor: ArrayProcessor,
 
   camelizeKeys: function() {
-    this.json.forEach(camelizeKeys);
+    var array = this.array;
+    for (var i=0, l=array.length; i<l; i++) {
+      array[i] = camelizeKeys(array[i]);
+    }
+
     return this;
   },
 
-  munge: function(callback) {
-    this.json.forEach(function(object) {
-      munge(object, callback);
-    });
-    return this;
-  },
-
-  applyTransforms: function(transformType) {
-    var type = this.type;
-
-    this.json.forEach(function(object) {
-      applyTransforms(object, type, transformType);
-    });
+  munge: function(callback, binding) {
+    var array = this.array;
+    for (var i=0, l=array.length; i<l; i++) {
+      callback.call(binding, array[i]);
+    }
 
     return this;
   }
-};
-
-function arrayProcessorFactory(store, type, array) {
-  return function(json) {
-    return new ArrayProcessor(json, type, array, store);
-  };
 }
 
-var HasManyProcessor = function(json, store, record, relationship) {
-  this.json = json;
-  this.store = store;
-  this.record = record;
-  this.type = record.constructor;
-  this.relationship = relationship;
-};
+var transforms = {};
 
-HasManyProcessor.prototype = Ember.create(ArrayProcessor.prototype);
-
-HasManyProcessor.prototype.load = function() {
-  var store = this.store;
-  var ids = map.call(this.json, function(obj) { return obj.id; });
-
-  store.loadMany(this.relationship.type, this.json);
-  store.loadHasMany(this.record, this.relationship.key, ids);
-};
-
-function hasManyProcessorFactory(store, record, relationship) {
-  return function(json) {
-    return new HasManyProcessor(json, store, record, relationship);
-  };
+function registerTransform(name, transforms) {
+  transforms[name] = transforms;
 }
 
-function SaveProcessor(record, store, type, includeId) {
-  this.record = record;
-  ObjectProcessor.call(this, record.toJSON({ includeId: includeId }), type, store);
+function clearTransforms() {
+  transforms = {};
 }
 
-SaveProcessor.prototype = Ember.create(ObjectProcessor.prototype);
+Ember.merge(DataProcessor.prototype, {
+  applyTransforms: function(transform) {
 
-SaveProcessor.prototype.save = function(callback) {
-  callback(this.json);
-};
+  }
+});
 
-function saveProcessorFactory(store, type, includeId) {
-  return function(record) {
-    return new SaveProcessor(record, store, type, includeId);
+DS.process = function(json) {
+  if (Ember.typeOf(json) === 'array') {
+    return new ArrayProcessor(json);
+  } else {
+    return new DataProcessor(json);
+  }
+}
+
+function ObjectLoader(store, type) {
+  return function(object) {
+    var json;
+
+    if (object instanceof DataProcessor) {
+      json = object.json;
+    } else {
+      json = object;
+    }
+
+    store.load(type, json);
+  }
+}
+
+function ArrayLoader(store, type, queryArray) {
+  return function(array) {
+    var json;
+
+    if (array instanceof ArrayProcessor) {
+      json = array.array;
+    } else {
+      json = array;
+    }
+
+    var references = json.map(function(object) {
+      return store.load(type, object);
+    });
+
+    queryArray.load(references);
+  }
+}
+
+function HasManyLoader(store, record, relationship) {
+  return function(array) {
+    var json;
+
+    if (array instanceof ArrayProcessor) {
+      json = array.array;
+    } else {
+      json = array;
+    }
+
+    var ids = json.map(function(obj) { return obj.id; });
+
+    store.loadMany(relationship.type, json);
+    store.loadHasMany(record, relationship.key, ids);
   };
 }
 
@@ -181,7 +123,7 @@ DS.BasicAdapter = DS.Adapter.extend({
     Ember.assert("You are trying to use the BasicAdapter to find id '" + id + "' of " + type + " but " + type + ".sync was not found", sync);
     Ember.assert("The sync code on " + type + " does not implement find(), but you are trying to find id '" + id + "'.", sync.find);
 
-    sync.find(id, loadObjectProcessorFactory(store, type));
+    sync.find(id, ObjectLoader(store, type));
   },
 
   findQuery: function(store, type, query, recordArray) {
@@ -190,13 +132,14 @@ DS.BasicAdapter = DS.Adapter.extend({
     Ember.assert("You are trying to use the BasicAdapter to query " + type + " but " + type + ".sync was not found", sync);
     Ember.assert("The sync code on " + type + " does not implement query(), but you are trying to query " + type + ".", sync.query);
 
-    sync.query(query, arrayProcessorFactory(store, type, recordArray));
+    sync.query(query, ArrayLoader(store, type, recordArray));
   },
 
   findHasMany: function(store, record, relationship, data) {
+    debugger;
     var name = capitalize(relationship.key),
         sync = record.constructor.sync,
-        processor = hasManyProcessorFactory(store, record, relationship);
+        load = HasManyLoader(store, record, relationship);
 
     var options = {
       relationship: relationship.key,
@@ -204,9 +147,9 @@ DS.BasicAdapter = DS.Adapter.extend({
     };
 
     if (sync['find'+name]) {
-      sync['find' + name](record, options, processor);
+      sync['find' + name](record, options, load);
     } else if (sync.findHasMany) {
-      sync.findHasMany(record, options, processor);
+      sync.findHasMany(record, options, load);
     } else {
       Ember.assert("You are trying to use the BasicAdapter to find the " + relationship.key + " has-many relationship, but " + record.constructor + ".sync did not implement findHasMany or find" + name + ".", false);
     }
