@@ -107,13 +107,23 @@ DS.RESTAdapter = DS.Adapter.extend({
     }
   },
 
-  createRecord: function(store, type, record) {
+  urlFor: function(type, options){
+ 
+ //   if(var override = mappings.get(type)){
+   //   return override(record, type, includeId);
+   // }
     var root = this.rootForType(type);
+    return this.buildURL(root);
 
+  },
+
+  createRecord: function(store, type, record) {
     var data = {};
     data[root] = this.serialize(record, { includeId: true });
+   
+    var urlOptions = { includeId: false, record: record, bulk: false};
 
-    this.ajax(this.buildURL(root), "POST", {
+    this.ajax(this.urlFor(type, options), "POST", {
       data: data,
       success: function(json) {
         Ember.run(this, function(){
@@ -130,17 +140,16 @@ DS.RESTAdapter = DS.Adapter.extend({
     if (get(this, 'bulkCommit') === false) {
       return this._super(store, type, records);
     }
-
-    var root = this.rootForType(type),
-        plural = this.pluralize(root);
+    var  plural = this.pluralize(root);
 
     var data = {};
     data[plural] = [];
     records.forEach(function(record) {
       data[plural].push(this.serialize(record, { includeId: true }));
     }, this);
+    var urlOptions = {includeId: false, bulk: true};
 
-    this.ajax(this.buildURL(root), "POST", {
+    this.ajax(this.urlFor(type, options), "POST", {
       data: data,
       success: function(json) {
         Ember.run(this, function(){
@@ -151,13 +160,12 @@ DS.RESTAdapter = DS.Adapter.extend({
   },
 
   updateRecord: function(store, type, record) {
-    var id = get(record, 'id');
-    var root = this.rootForType(type);
 
     var data = {};
     data[root] = this.serialize(record);
+    var urlOptions = { includeId: true, record: record, bulk: false};
 
-    this.ajax(this.buildURL(root, id), "PUT", {
+    this.ajax(this.urlFor(type, options), "PUT", {
       data: data,
       success: function(json) {
         Ember.run(this, function(){
@@ -175,8 +183,7 @@ DS.RESTAdapter = DS.Adapter.extend({
       return this._super(store, type, records);
     }
 
-    var root = this.rootForType(type),
-        plural = this.pluralize(root);
+    var plural = this.pluralize(root);
 
     var data = {};
     data[plural] = [];
@@ -184,7 +191,9 @@ DS.RESTAdapter = DS.Adapter.extend({
       data[plural].push(this.serialize(record, { includeId: true }));
     }, this);
 
-    this.ajax(this.buildURL(root, "bulk"), "PUT", {
+    var urlOptions = { includeId: false, bulk: true};
+
+    this.ajax(this.urlFor(type, urlOptions), "PUT", {
       data: data,
       success: function(json) {
         Ember.run(this, function(){
@@ -196,9 +205,9 @@ DS.RESTAdapter = DS.Adapter.extend({
 
   deleteRecord: function(store, type, record) {
     var id = get(record, 'id');
-    var root = this.rootForType(type);
+    var urlOptions = { includeId: true, record: record, bulk: false};
 
-    this.ajax(this.buildURL(root, id), "DELETE", {
+    this.ajax(this.urlFor(type, urlOptions), "DELETE", {
       success: function(json) {
         Ember.run(this, function(){
           this.didDeleteRecord(store, type, record, json);
@@ -215,8 +224,7 @@ DS.RESTAdapter = DS.Adapter.extend({
       return this._super(store, type, records);
     }
 
-    var root = this.rootForType(type),
-        plural = this.pluralize(root),
+    var plural = this.pluralize(root),
         serializer = get(this, 'serializer');
 
     var data = {};
@@ -224,8 +232,10 @@ DS.RESTAdapter = DS.Adapter.extend({
     records.forEach(function(record) {
       data[plural].push(serializer.serializeId( get(record, 'id') ));
     });
+    
+    var urlOptions = { includeId: false, bulk: true};
 
-    this.ajax(this.buildURL(root, 'bulk'), "DELETE", {
+    this.ajax(this.urlFor(type, urlOptions), "DELETE", {
       data: data,
       success: function(json) {
         Ember.run(this, function(){
@@ -237,6 +247,8 @@ DS.RESTAdapter = DS.Adapter.extend({
 
   find: function(store, type, id) {
     var root = this.rootForType(type);
+
+    var urlOptions = { includeId: true, record: record, bulk: false};
 
     this.ajax(this.buildURL(root, id), "GET", {
       success: function(json) {
@@ -340,7 +352,7 @@ DS.RESTAdapter = DS.Adapter.extend({
     return serializer.pluralize(string);
   },
 
-  buildURL: function(record, suffix) {
+  buildURL: function(recordName, suffix) {
     var url = [this.url];
 
     Ember.assert("Namespace URL (" + this.namespace + ") must not start with slash", !this.namespace || this.namespace.toString().charAt(0) !== "/");
@@ -351,7 +363,7 @@ DS.RESTAdapter = DS.Adapter.extend({
       url.push(this.namespace);
     }
 
-    url.push(this.pluralize(record));
+    url.push(this.pluralize(recordName));
     if (suffix !== undefined) {
       url.push(suffix);
     }
