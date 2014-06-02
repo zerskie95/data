@@ -6,7 +6,7 @@ import {PromiseObject} from "../store";
 */
 
 var get = Ember.get, set = Ember.set,
-    merge = Ember.merge,
+    merge = Ember.merge, copy = Ember.copy,
     Promise = Ember.RSVP.Promise;
 
 var JSONSerializer;
@@ -795,6 +795,9 @@ var Model = Ember.Object.extend(Ember.Evented, {
   */
   updateHasMany: function(name, records) {
     this._data[name] = records;
+    var hasMany = this._relationships[name];
+    var type = hasMany.get('type');
+    hasMany.set('meta', copy(this.store.metadataFor(type)));
     this.hasManyDidChange(name);
   },
 
