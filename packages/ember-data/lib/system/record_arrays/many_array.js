@@ -125,15 +125,12 @@ var ManyArray = RecordArray.extend({
     //monitor reloading state
     //handle failure
     var record = get(this, 'owner');
-    var data = get(record, 'data');
     var key = get(this, 'name');
-    var link = data.links && data.links[key];
-    var store = get(this, 'store');
     var promiseLabel = "DS: Async hasMany reloading " + record + " : " + key;
 
     var resolver = Ember.RSVP.defer(promiseLabel);
 
-    store.findHasMany(record, link, relationshipFromMeta(store, record.constructor.metaForProperty(key)), resolver);
+    record._fetchHasMany(key, resolver);
     var manyArray = this;
     var promise = resolver.promise.then(function(){
       return manyArray;

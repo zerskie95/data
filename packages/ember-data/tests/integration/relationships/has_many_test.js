@@ -117,7 +117,7 @@ test("A serializer can materialize a hasMany as an opaque token that can be lazi
   }));
 });
 
-test("A hasMany relationship can be reloaded if it fetched lazily", function() {
+test("A hasMany relationship can be reloaded if it fetched via a link", function() {
   Post.reopen({
     comments: DS.hasMany('comment', { async: true })
   });
@@ -161,6 +161,51 @@ test("A hasMany relationship can be reloaded if it fetched lazily", function() {
     return comments.reload();
   })).then(async(function(newComments){
     equal(newComments.get('length'), 3, "reloaded comments have 3 length");
+  }));
+});
+
+test("A hasMany relationship can be reloaded", function() {
+  Post.reopen({
+    comments: DS.hasMany('comment', { async: true })
+  });
+
+  env.adapter.find = function(store, type, id) {
+    equal(type, Post, "find type was Post");
+    equal(id, "1", "find id was 1");
+
+    return Ember.RSVP.resolve({ id: 1, comments: [1,2] });
+  };
+
+  env.adapter.findMany = function(store, record, link, relationship) {
+    equal(relationship.type, Comment, "findHasMany relationship type was Comment");
+    equal(relationship.key, 'comments', "findHasMany relationship key was comments");
+
+    return Ember.RSVP.resolve([
+      { id: 1, body: "First" },
+      { id: 2, body: "Second" }
+    ]);
+  };
+
+  env.store.find('post', 1).then(async(function(post) {
+    return post.get('comments');
+  })).then(async(function(comments) {
+    equal(comments.get('isLoaded'), true, "comments are loaded");
+    equal(comments.get('length'), 2, "comments have 2 length");
+
+    env.adapter.findMany = function(store, record, link, relationship) {
+      equal(relationship.type, Comment, "findHasMany relationship type was Comment");
+      equal(relationship.key, 'comments', "findHasMany relationship key was comments");
+
+      return Ember.RSVP.resolve([
+        { id: 1, body: "I have updated" },
+        { id: 2, body: "Second" }
+      ]);
+    };
+
+    return comments.reload();
+  })).then(async(function(newComments){
+    equal(newComments.get('length'), 2, "reloaded comments have 2 length");
+    equal(newComments.objectAt(0).get('body'), "I have updated", "The comment record was updated");
   }));
 });
 

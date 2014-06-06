@@ -443,5 +443,25 @@ Model.reopen({
   */
   eachRelationship: function(callback, binding) {
     this.constructor.eachRelationship(callback, binding);
+  },
+
+  /**
+    Fetch the data ssociated with a particular hasMany relationship
+
+    @method _fetchHasMany
+    @param {String} key that identifies the hasMany relationshipFromMeta
+  **/
+
+  _fetchHasMany: function(key, resolver){
+    var data = get(this, 'data');
+    var store =get(this, 'store');
+    var meta = this.constructor.metaForProperty(key);
+    var link = data.links && data.links[key];
+    if (link) {
+      return store.findHasMany(this, link, relationshipFromMeta(store, meta), resolver);
+    } else {
+      return store.findMany(this, data[key], typeForRelationshipMeta(store, meta), resolver);
+    }
   }
+
 });

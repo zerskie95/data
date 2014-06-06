@@ -16,13 +16,7 @@ function asyncHasMany(type, options, meta) {
     if (!relationship) {
       var resolver = Ember.RSVP.defer(promiseLabel);
       relationship = buildRelationship(this, key, options, function(store, data) {
-        var link = data.links && data.links[key];
-        var rel;
-        if (link) {
-          rel = store.findHasMany(this, link, relationshipFromMeta(store, meta), resolver);
-        } else {
-          rel = store.findMany(this, data[key], typeForRelationshipMeta(store, meta), resolver);
-        }
+        var rel = this._fetchHasMany(key, resolver);
         // cache the promise so we can use it
         // when we come back and don't need to rebuild
         // the relationship.
