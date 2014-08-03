@@ -395,7 +395,7 @@ export default Adapter.extend({
   findHasMany: function(store, record, url, relationship) {
     var host = get(this, 'host');
     var id   = get(record, 'id');
-    var type = record.constructor.typeKey;
+    var type = get(record, 'typeKey');
 
     if (host && url.charAt(0) === '/' && url.charAt(1) !== '/') {
       url = host + url;
@@ -433,7 +433,7 @@ export default Adapter.extend({
   */
   findBelongsTo: function(store, record, url, relationship) {
     var id   = get(record, 'id');
-    var type = record.constructor.typeKey;
+    var type = get(record, 'typeKey');
 
     return this.ajax(this.urlPrefix(url, this.buildURL(type, id)), 'GET');
   },

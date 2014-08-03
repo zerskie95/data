@@ -1077,6 +1077,10 @@ var Model = Ember.Object.extend(Ember.Evented, {
     this.clearRelationships();
   },
 
+  typeKey: Ember.computed(function() {
+    return this.constructor.typeKey;
+  }),
+
   // This is a temporary solution until we refactor DS.Model to not
   // rely on the data property.
   willMergeMixin: function(props) {

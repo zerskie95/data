@@ -10,6 +10,7 @@ import {
   Adapter
 } from "ember-data/system/adapter";
 import { singularize } from "ember-inflector/system/string";
+import  ZalgoProxy from "ember-data/system/zalgo_proxy";
 
 import {
   promiseArray,
@@ -184,7 +185,8 @@ Store = Ember.Object.extend({
     @param {Object} options an options hash
   */
   serialize: function(record, options) {
-    return this.serializerFor(record.constructor.typeKey).serialize(record, options);
+    var zalgoProxy = ZalgoProxy.create({ content: record });
+    return this.serializerFor(record.constructor.typeKey).serialize(zalgoProxy, options);
   },
 
   /**
