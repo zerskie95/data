@@ -1,4 +1,4 @@
-import setupContainer from './setup-container';
+import setupContainer from 'ember-data/setup-container';
 
 var K = Ember.K;
 
@@ -6,7 +6,7 @@ var K = Ember.K;
   @module ember-data
 */
 
-/**
+/*
 
   This code initializes Ember-Data onto an Ember application.
 

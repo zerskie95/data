@@ -496,7 +496,7 @@ Ember Data 1.0.beta.1 is expecting a payload like this:
     "id": 1
     "title": "Rails is omakase",
     "comments": ["1", "2"],
-    "_links": {
+    "links": {
       "user": "/people/dhh"
     },
   },
@@ -522,7 +522,7 @@ App.PostSerializer = DS.RESTSerializer.extend({
 
     post.id = payload.id;
     post.title = payload.title;
-    post._links = { user: payload._links.mapProperty('user').findProperty('href').href };
+    post.links = { user: payload._links.mapBy('user').findBy('href').href };
 
     // Leave the original un-normalized comments alone, but put them
     // in the right place in the payload. We'll normalize the comments
@@ -552,13 +552,13 @@ App.PostSerializer = DS.RESTSerializer.extend({
 
     post.id = payload.id;
     post.title = payload.title;
-    post._links = { user: payload._links.mapProperty('user').findProperty('href').href };
+    post.links = { user: payload._links.mapBy('user').findBy('href').href };
 
     // Leave the original un-normalized comments alone, but put them
     // in the right place in the payload. We'll normalize the comments
     // below in `normalizeHash`
     var comments = payload._embedded.comments;
-    post.comments = comments.mapProperty('ID_');
+    post.comments = comments.mapBy('ID_');
     
     var post_payload = { post: post, comments: comments };
 
@@ -767,7 +767,7 @@ App.ApplicationSerializer = DS.RESTSerializer.extend({
 
     json[key] = value;
   }
-}
+});
 ```
 
 ### Embedded Records
@@ -802,7 +802,7 @@ You could handle embedded records like this:
 App.PostSerializer = DS.RESTSerializer.extend({
   extractSingle: function(store, type, payload, id) {
     var comments = payload.post.comments,
-        commentIds = comments.mapProperty('id');
+        commentIds = comments.mapBy('id');
 
     payload.comments = comments;
     payload.post.comments = commentIds;

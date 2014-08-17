@@ -1,4 +1,4 @@
-import {singularize} from "../../../ember-inflector/lib/system";
+import { singularize } from "ember-inflector/system";
 
 export function typeForRelationshipMeta(store, meta) {
   var typeKey, type;
@@ -25,4 +25,11 @@ export function relationshipFromMeta(store, meta) {
     parentType: meta.parentType,
     isRelationship: true
   };
+}
+
+export function isSyncRelationship(record, relationshipName) {
+  var meta = Ember.meta(record);
+  var desc = meta.descs[relationshipName];
+
+  return desc && !desc._meta.options.async;
 }

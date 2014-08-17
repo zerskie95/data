@@ -48,6 +48,14 @@ module("integration/serializer/rest - RESTSerializer", {
   }
 });
 
+test("typeForRoot returns always same typeKey even for uncountable multi words keys", function() {
+  expect(2);
+  Ember.Inflector.inflector.uncountable('words');
+  expectedTypeKey = 'multiWords';
+  equal(env.restSerializer.typeForRoot('multi_words'), expectedTypeKey);
+  equal(env.restSerializer.typeForRoot('multiWords'), expectedTypeKey);
+});
+
 test("extractArray with custom typeForRoot", function() {
   env.restSerializer.typeForRoot = function(root) {
     var camelized = Ember.String.camelize(root);
@@ -128,6 +136,14 @@ test("normalizePayload is called during extractSingle", function() {
   var data = applicationSerializer.extractSingle(env.store, EvilMinion, jsonHash);
 
   equal(data.name, jsonHash.response.evilMinion.name, "normalize reads off the response");
+
+});
+test("serialize polymorphic when associated object is null", function() {
+  var ray = env.store.createRecord(DoomsdayDevice, {name: "DeathRay"});
+
+  var json = env.restSerializer.serialize(ray);
+
+  deepEqual(json["evilMinionType"], null);
 });
 
 test("extractArray can load secondary records of the same type without affecting the query count", function() {

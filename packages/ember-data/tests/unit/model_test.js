@@ -74,6 +74,23 @@ test("trying to set an `id` attribute should raise", function() {
   }, /You may not set `id`/);
 });
 
+test("a collision of a record's id with object function's name", function() {
+  var hasWatchMethod = Object.prototype.watch;
+  try {
+    if (!hasWatchMethod) {
+      Object.prototype.watch = function(){};
+    }
+    store.push(Person, { id: 'watch' });
+    store.find(Person, 'watch').then(async(function(record) {
+      equal(get(record, 'id'), 'watch', "record is successfully created and could be found by its id");
+    }));
+  } finally {
+    if (!hasWatchMethod) {
+      delete Object.prototype.watch;
+    }
+  }
+});
+
 test("it should use `_reference` and not `reference` to store its reference", function() {
   store.push(Person, { id: 1 });
 
@@ -352,8 +369,8 @@ test("a DS.Model can describe Date attributes", function() {
   converts('date', null, null);
   converts('date', undefined, undefined);
 
-  var dateString = "Sat, 31 Dec 2011 00:08:16 GMT";
-  var date = new Date(dateString);
+  var dateString = "2011-12-31T00:08:16.000Z";
+  var date = new Date(Ember.Date.parse(dateString));
 
   var store = createStore();
 
@@ -405,4 +422,16 @@ test("A DS.Model can be JSONified", function() {
   var store = createStore({ person: Person });
   var record = store.createRecord('person', { name: "TomHuda" });
   deepEqual(record.toJSON(), { name: "TomHuda" });
+});
+
+test("A subclass of DS.Model can not use the `data` property", function() {
+  var Person = DS.Model.extend({
+    data: DS.attr('string')
+  });
+
+  var store = createStore({ person: Person });
+
+  expectAssertion(function() {
+    var record = store.createRecord('person', { name: "TomHuda" });
+  }, /`data` is a reserved property name on DS.Model objects/);
 });

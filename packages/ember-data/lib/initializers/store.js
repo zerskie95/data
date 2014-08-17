@@ -1,7 +1,7 @@
-import {JSONSerializer, RESTSerializer} from "../serializers";
-import {RESTAdapter} from "../adapters";
-import ContainerProxy from "../system/container_proxy";
-import Store from "../system/store";
+import {JSONSerializer, RESTSerializer} from "ember-data/serializers";
+import {RESTAdapter} from "ember-data/adapters";
+import ContainerProxy from "ember-data/system/container_proxy";
+import Store from "ember-data/system/store";
 
 /**
   Configures a container for use with an Ember-Data
@@ -21,9 +21,9 @@ export default function initializeStore(container, application){
 
   var proxy = new ContainerProxy(container);
   proxy.registerDeprecations([
-    {deprecated: 'serializer:_default',  valid: 'serializer:-default'},
-    {deprecated: 'serializer:_rest',     valid: 'serializer:-rest'},
-    {deprecated: 'adapter:_rest',        valid: 'adapter:-rest'}
+    { deprecated: 'serializer:_default',  valid: 'serializer:-default' },
+    { deprecated: 'serializer:_rest',     valid: 'serializer:-rest' },
+    { deprecated: 'adapter:_rest',        valid: 'adapter:-rest' }
   ]);
 
   // new go forward paths

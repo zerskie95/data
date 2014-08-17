@@ -94,6 +94,10 @@ test("serializeIntoHash with decamelized types", function() {
 
 
 test("normalize", function() {
+  SuperVillain.reopen({
+    yellowMinion: DS.belongsTo('yellowMinion')
+  })
+
   var superVillain_hash = {first_name: "Tom", last_name: "Dale", home_planet_id: "123", evil_minion_ids: [1,2]};
 
   var json = env.amsSerializer.normalize(SuperVillain, superVillain_hash, "superVillain");
@@ -187,6 +191,14 @@ test("serialize polymorphic when type key is not camelized", function() {
   var json = env.amsSerializer.serialize(ray);
 
   deepEqual(json["evil_minion_type"], "YellowMinion");
+});
+
+test("serialize polymorphic when associated object is null", function() {
+  var ray = env.store.createRecord(DoomsdayDevice, {name: "DeathRay"});
+
+  var json = env.amsSerializer.serialize(ray);
+
+  deepEqual(json["evil_minion_type"], null);
 });
 
 test("extractPolymorphic hasMany", function() {

@@ -1,4 +1,4 @@
-/*globals ENV QUnit */
+/* globals ENV, QUnit */
 
 (function (){
   window.Ember = window.Ember || {};
@@ -132,7 +132,7 @@
       // otherwise, let a future turn of the event loop
       // handle the error.
       if (reason && reason instanceof Error) {
-        Ember.Logger.log(reason, reason.stack)
+        Ember.Logger.log(reason, reason.stack);
         throw reason;
       }
     });
@@ -158,7 +158,9 @@
       didUpdateAttribute: syncForTest(),
       didUpdateAttributes: syncForTest(),
       didUpdateRelationship: syncForTest(),
-      didUpdateRelationships: syncForTest()
+      didUpdateRelationships: syncForTest(),
+      scheduleFetch: syncForTest(),
+      scheduleFetchMany: syncForTest()
     });
 
     DS.Model.reopen({

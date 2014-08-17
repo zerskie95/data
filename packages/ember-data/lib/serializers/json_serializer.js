@@ -1,6 +1,9 @@
-import {RelationshipChange} from "../system/changes";
-var get = Ember.get, set = Ember.set, isNone = Ember.isNone,
-    map = Ember.ArrayPolyfills.map;
+import { RelationshipChange } from "ember-data/system/changes";
+var get = Ember.get;
+var set = Ember.set;
+var isNone = Ember.isNone;
+var map = Ember.ArrayPolyfills.map;
+var merge = Ember.merge;
 
 /**
   In Ember Data a Serializer is used to serialize and deserialize
@@ -17,7 +20,7 @@ var get = Ember.get, set = Ember.set, isNone = Ember.isNone,
   @class JSONSerializer
   @namespace DS
 */
-var JSONSerializer = Ember.Object.extend({
+export default Ember.Object.extend({
   /**
     The primaryKey is used when serializing and deserializing
     data. Ember Data always uses the `id` property to store the id of
@@ -44,7 +47,7 @@ var JSONSerializer = Ember.Object.extend({
     The `attrs` object can be used to declare a simple mapping between
     property names on `DS.Model` records and payload keys in the
     serialized JSON object representing the record. An object with the
-    propery `key` can also be used to designate the attribute's key on
+    property `key` can also be used to designate the attribute's key on
     the response payload.
 
     Example
@@ -65,6 +68,30 @@ var JSONSerializer = Ember.Object.extend({
     });
     ```
 
+    You can also remove attributes by setting the `serialize` key to
+    false in your mapping object.
+
+    Example
+
+    ```javascript
+    App.PersonSerializer = DS.JSONSerializer.extend({
+      attrs: {
+        admin: {serialize: false},
+        occupation: {key: 'career'}
+      }
+    });
+    ```
+
+    When serialized:
+
+    ```javascript
+    {
+      "career": "magician"
+    }
+    ```
+
+    Note that the `admin` is now not included in the payload.
+
     @property attrs
     @type {Object}
   */
@@ -84,6 +111,8 @@ var JSONSerializer = Ember.Object.extend({
   */
   applyTransforms: function(type, data) {
     type.eachTransformedAttribute(function(key, type) {
+      if (!data.hasOwnProperty(key)) { return; }
+
       var transform = this.transformFor(type);
       data[key] = transform.deserialize(data[key]);
     }, this);
@@ -130,9 +159,74 @@ var JSONSerializer = Ember.Object.extend({
     if (!hash) { return hash; }
 
     this.normalizeId(hash);
+    this.normalizeAttributes(type, hash);
+    this.normalizeRelationships(type, hash);
+
     this.normalizeUsingDeclaredMapping(type, hash);
     this.applyTransforms(type, hash);
     return hash;
+  },
+
+  /**
+    You can use this method to normalize all payloads, regardless of whether they
+    represent single records or an array.
+
+    For example, you might want to remove some extraneous data from the payload:
+
+    ```js
+    App.ApplicationSerializer = DS.JSONSerializer.extend({
+      normalizePayload: function(payload) {
+        delete payload.version;
+        delete payload.status;
+        return payload;
+      }
+    });
+    ```
+
+    @method normalizePayload
+    @param {Object} payload
+    @return {Object} the normalized payload
+  */
+  normalizePayload: function(payload) {
+    return payload;
+  },
+
+  /**
+    @method normalizeAttributes
+    @private
+  */
+  normalizeAttributes: function(type, hash) {
+    var payloadKey, key;
+
+    if (this.keyForAttribute) {
+      type.eachAttribute(function(key) {
+        payloadKey = this.keyForAttribute(key);
+        if (key === payloadKey) { return; }
+        if (!hash.hasOwnProperty(payloadKey)) { return; }
+
+        hash[key] = hash[payloadKey];
+        delete hash[payloadKey];
+      }, this);
+    }
+  },
+
+  /**
+    @method normalizeRelationships
+    @private
+  */
+  normalizeRelationships: function(type, hash) {
+    var payloadKey, key;
+
+    if (this.keyForRelationship) {
+      type.eachRelationship(function(key, relationship) {
+        payloadKey = this.keyForRelationship(key, relationship.kind);
+        if (key === payloadKey) { return; }
+        if (!hash.hasOwnProperty(payloadKey)) { return; }
+
+        hash[key] = hash[payloadKey];
+        delete hash[payloadKey];
+      }, this);
+    }
   },
 
   /**
@@ -144,17 +238,17 @@ var JSONSerializer = Ember.Object.extend({
 
     if (attrs) {
       for (key in attrs) {
-        payloadKey = attrs[key];
-        if (payloadKey && payloadKey.key) {
-          payloadKey = payloadKey.key;
-        }
-        if (typeof payloadKey === 'string') {
+        payloadKey = this._getMappedKey(key);
+        if (!hash.hasOwnProperty(payloadKey)) { continue; }
+
+        if (payloadKey !== key) {
           hash[key] = hash[payloadKey];
           delete hash[payloadKey];
         }
       }
     }
   },
+
   /**
     @method normalizeId
     @private
@@ -166,6 +260,48 @@ var JSONSerializer = Ember.Object.extend({
 
     hash.id = hash[primaryKey];
     delete hash[primaryKey];
+  },
+
+  /**
+    Looks up the property key that was set by the custom `attr` mapping
+    passed to the serializer.
+
+    @method _getMappedKey
+    @private
+    @param {String} key
+    @return {String} key
+  */
+  _getMappedKey: function(key) {
+    var attrs = get(this, 'attrs');
+    var mappedKey;
+    if (attrs && attrs[key]) {
+      mappedKey = attrs[key];
+      //We need to account for both the {title: 'post_title'} and
+      //{title: {key: 'post_title'}} forms
+      if (mappedKey.key){
+        mappedKey = mappedKey.key;
+      }
+      if (typeof mappedKey === 'string'){
+        key = mappedKey;
+      }
+    }
+
+    return key;
+  },
+
+  /**
+    Check attrs.key.serialize property to inform if the `key`
+    can be serialized
+
+    @method _canSerialize
+    @private
+    @param {String} key
+    @return {boolean} true if the key can be serialized
+  */
+  _canSerialize: function(key) {
+    var attrs = get(this, 'attrs');
+
+    return !attrs || !attrs[key] || attrs[key].serialize !== false;
   },
 
   // SERIALIZE
@@ -228,7 +364,7 @@ var JSONSerializer = Ember.Object.extend({
         var json = {
           POST_TTL: post.get('title'),
           POST_BDY: post.get('body'),
-          POST_CMS: post.get('comments').mapProperty('id')
+          POST_CMS: post.get('comments').mapBy('id')
         }
 
         if (options.includeId) {
@@ -339,6 +475,34 @@ var JSONSerializer = Ember.Object.extend({
   },
 
   /**
+    You can use this method to customize how a serialized record is added to the complete
+    JSON hash to be sent to the server. By default the JSON Serializer does not namespace
+    the payload and just sends the raw serialized JSON object.
+    If your server expects namespaced keys, you should consider using the RESTSerializer.
+    Otherwise you can override this method to customize how the record is added to the hash.
+
+    For example, your server may expect underscored root objects.
+
+    ```js
+    App.ApplicationSerializer = DS.RESTSerializer.extend({
+      serializeIntoHash: function(data, type, record, options) {
+        var root = Ember.String.decamelize(type.typeKey);
+        data[root] = this.serialize(record, options);
+      }
+    });
+    ```
+
+    @method serializeIntoHash
+    @param {Object} hash
+    @param {subclass of DS.Model} type
+    @param {DS.Model} record
+    @param {Object} options
+  */
+  serializeIntoHash: function(hash, type, record, options) {
+    merge(hash, this.serialize(record, options));
+  },
+
+  /**
    `serializeAttribute` can be used to customize how `DS.attr`
    properties are serialized
 
@@ -362,19 +526,25 @@ var JSONSerializer = Ember.Object.extend({
    @param {Object} attribute
   */
   serializeAttribute: function(record, json, key, attribute) {
-    var attrs = get(this, 'attrs');
-    var value = get(record, key), type = attribute.type;
+    var type = attribute.type;
 
-    if (type) {
-      var transform = this.transformFor(type);
-      value = transform.serialize(value);
+    if (this._canSerialize(key)) {
+      var value = get(record, key);
+      if (type) {
+        var transform = this.transformFor(type);
+        value = transform.serialize(value);
+      }
+
+      // if provided, use the mapping provided by `attrs` in
+      // the serializer
+      var payloadKey =  this._getMappedKey(key);
+
+      if (payloadKey === key && this.keyForAttribute) {
+        payloadKey = this.keyForAttribute(key);
+      }
+
+      json[payloadKey] = value;
     }
-
-    // if provided, use the mapping provided by `attrs` in
-    // the serializer
-    key = attrs && attrs[key] || (this.keyForAttribute ? this.keyForAttribute(key) : key);
-
-    json[key] = value;
   },
 
   /**
@@ -405,18 +575,25 @@ var JSONSerializer = Ember.Object.extend({
   serializeBelongsTo: function(record, json, relationship) {
     var key = relationship.key;
 
-    var belongsTo = get(record, key);
+    if (this._canSerialize(key)) {
+      var belongsTo = get(record, key);
 
-    key = this.keyForRelationship ? this.keyForRelationship(key, "belongsTo") : key;
+      // if provided, use the mapping provided by `attrs` in
+      // the serializer
+      var payloadKey = this._getMappedKey(key);
+      if (payloadKey === key && this.keyForRelationship) {
+        payloadKey = this.keyForRelationship(key, "belongsTo");
+      }
 
-    if (isNone(belongsTo)) {
-      json[key] = belongsTo;
-    } else {
-      json[key] = get(belongsTo, 'id');
-    }
+      if (isNone(belongsTo)) {
+        json[payloadKey] = belongsTo;
+      } else {
+        json[payloadKey] = get(belongsTo, 'id');
+      }
 
-    if (relationship.options.polymorphic) {
-      this.serializePolymorphicType(record, json, relationship);
+      if (relationship.options.polymorphic) {
+        this.serializePolymorphicType(record, json, relationship);
+      }
     }
   },
 
@@ -446,12 +623,23 @@ var JSONSerializer = Ember.Object.extend({
   */
   serializeHasMany: function(record, json, relationship) {
     var key = relationship.key;
-    var payloadKey = this.keyForRelationship ? this.keyForRelationship(key, "hasMany") : key;
-    var relationshipType = RelationshipChange.determineRelationshipType(record.constructor, relationship);
 
-    if (relationshipType === 'manyToNone' || relationshipType === 'manyToMany') {
-      json[payloadKey] = get(record, key).mapBy('id');
-      // TODO support for polymorphic manyToNone and manyToMany relationships
+    if (this._canSerialize(key)) {
+      var payloadKey;
+
+      // if provided, use the mapping provided by `attrs` in
+      // the serializer
+      payloadKey = this._getMappedKey(key);
+      if (payloadKey === key && this.keyForRelationship) {
+        payloadKey = this.keyForRelationship(key, "hasMany");
+      }
+
+      var relationshipType = RelationshipChange.determineRelationshipType(record.constructor, relationship);
+
+      if (relationshipType === 'manyToNone' || relationshipType === 'manyToMany') {
+        json[payloadKey] = get(record, key).mapBy('id');
+        // TODO support for polymorphic manyToNone and manyToMany relationships
+      }
     }
   },
 
@@ -469,7 +657,12 @@ var JSONSerializer = Ember.Object.extend({
         var key = relationship.key,
             belongsTo = get(record, key);
         key = this.keyForAttribute ? this.keyForAttribute(key) : key;
-        json[key + "_type"] = belongsTo.constructor.typeKey;
+
+        if (Ember.isNone(belongsTo)) {
+          json[key + "_type"] = null;
+        } else {
+          json[key + "_type"] = belongsTo.constructor.typeKey;
+        }
       }
     });
    ```
@@ -531,10 +724,12 @@ var JSONSerializer = Ember.Object.extend({
     @param {DS.Store} store
     @param {subclass of DS.Model} type
     @param {Object} payload
+    @param {String or Number} id
+    @param {String} requestType
     @return {Array} array An array of deserialized objects
   */
-  extractFindAll: function(store, type, payload){
-    return this.extractArray(store, type, payload);
+  extractFindAll: function(store, type, payload, id, requestType){
+    return this.extractArray(store, type, payload, id, requestType);
   },
   /**
     `extractFindQuery` is a hook into the extract method used when a
@@ -545,10 +740,12 @@ var JSONSerializer = Ember.Object.extend({
     @param {DS.Store} store
     @param {subclass of DS.Model} type
     @param {Object} payload
+    @param {String or Number} id
+    @param {String} requestType
     @return {Array} array An array of deserialized objects
   */
-  extractFindQuery: function(store, type, payload){
-    return this.extractArray(store, type, payload);
+  extractFindQuery: function(store, type, payload, id, requestType){
+    return this.extractArray(store, type, payload, id, requestType);
   },
   /**
     `extractFindMany` is a hook into the extract method used when a
@@ -559,10 +756,12 @@ var JSONSerializer = Ember.Object.extend({
     @param {DS.Store} store
     @param {subclass of DS.Model} type
     @param {Object} payload
+    @param {String or Number} id
+    @param {String} requestType
     @return {Array} array An array of deserialized objects
   */
-  extractFindMany: function(store, type, payload){
-    return this.extractArray(store, type, payload);
+  extractFindMany: function(store, type, payload, id, requestType){
+    return this.extractArray(store, type, payload, id, requestType);
   },
   /**
     `extractFindHasMany` is a hook into the extract method used when a
@@ -573,10 +772,12 @@ var JSONSerializer = Ember.Object.extend({
     @param {DS.Store} store
     @param {subclass of DS.Model} type
     @param {Object} payload
+    @param {String or Number} id
+    @param {String} requestType
     @return {Array} array An array of deserialized objects
   */
-  extractFindHasMany: function(store, type, payload){
-    return this.extractArray(store, type, payload);
+  extractFindHasMany: function(store, type, payload, id, requestType){
+    return this.extractArray(store, type, payload, id, requestType);
   },
 
   /**
@@ -588,10 +789,12 @@ var JSONSerializer = Ember.Object.extend({
     @param {DS.Store} store
     @param {subclass of DS.Model} type
     @param {Object} payload
+    @param {String or Number} id
+    @param {String} requestType
     @return {Object} json The deserialized payload
   */
-  extractCreateRecord: function(store, type, payload) {
-    return this.extractSave(store, type, payload);
+  extractCreateRecord: function(store, type, payload, id, requestType) {
+    return this.extractSave(store, type, payload, id, requestType);
   },
   /**
     `extractUpdateRecord` is a hook into the extract method used when
@@ -602,10 +805,12 @@ var JSONSerializer = Ember.Object.extend({
     @param {DS.Store} store
     @param {subclass of DS.Model} type
     @param {Object} payload
+    @param {String or Number} id
+    @param {String} requestType
     @return {Object} json The deserialized payload
   */
-  extractUpdateRecord: function(store, type, payload) {
-    return this.extractSave(store, type, payload);
+  extractUpdateRecord: function(store, type, payload, id, requestType) {
+    return this.extractSave(store, type, payload, id, requestType);
   },
   /**
     `extractDeleteRecord` is a hook into the extract method used when
@@ -616,10 +821,12 @@ var JSONSerializer = Ember.Object.extend({
     @param {DS.Store} store
     @param {subclass of DS.Model} type
     @param {Object} payload
+    @param {String or Number} id
+    @param {String} requestType
     @return {Object} json The deserialized payload
   */
-  extractDeleteRecord: function(store, type, payload) {
-    return this.extractSave(store, type, payload);
+  extractDeleteRecord: function(store, type, payload, id, requestType) {
+    return this.extractSave(store, type, payload, id, requestType);
   },
 
   /**
@@ -631,10 +838,12 @@ var JSONSerializer = Ember.Object.extend({
     @param {DS.Store} store
     @param {subclass of DS.Model} type
     @param {Object} payload
+    @param {String or Number} id
+    @param {String} requestType
     @return {Object} json The deserialized payload
   */
-  extractFind: function(store, type, payload) {
-    return this.extractSingle(store, type, payload);
+  extractFind: function(store, type, payload, id, requestType) {
+    return this.extractSingle(store, type, payload, id, requestType);
   },
   /**
     `extractFindBelongsTo` is a hook into the extract method used when
@@ -645,10 +854,12 @@ var JSONSerializer = Ember.Object.extend({
     @param {DS.Store} store
     @param {subclass of DS.Model} type
     @param {Object} payload
+    @param {String or Number} id
+    @param {String} requestType
     @return {Object} json The deserialized payload
   */
-  extractFindBelongsTo: function(store, type, payload) {
-    return this.extractSingle(store, type, payload);
+  extractFindBelongsTo: function(store, type, payload, id, requestType) {
+    return this.extractSingle(store, type, payload, id, requestType);
   },
   /**
     `extractSave` is a hook into the extract method used when a call
@@ -659,10 +870,12 @@ var JSONSerializer = Ember.Object.extend({
     @param {DS.Store} store
     @param {subclass of DS.Model} type
     @param {Object} payload
+    @param {String or Number} id
+    @param {String} requestType
     @return {Object} json The deserialized payload
   */
-  extractSave: function(store, type, payload) {
-    return this.extractSingle(store, type, payload);
+  extractSave: function(store, type, payload, id, requestType) {
+    return this.extractSingle(store, type, payload, id, requestType);
   },
 
   /**
@@ -686,9 +899,12 @@ var JSONSerializer = Ember.Object.extend({
     @param {DS.Store} store
     @param {subclass of DS.Model} type
     @param {Object} payload
+    @param {String or Number} id
+    @param {String} requestType
     @return {Object} json The deserialized payload
   */
-  extractSingle: function(store, type, payload) {
+  extractSingle: function(store, type, payload, id, requestType) {
+    payload = this.normalizePayload(payload);
     return this.normalize(type, payload);
   },
 
@@ -712,11 +928,15 @@ var JSONSerializer = Ember.Object.extend({
     @param {DS.Store} store
     @param {subclass of DS.Model} type
     @param {Object} payload
+    @param {String or Number} id
+    @param {String} requestType
     @return {Array} array An array of deserialized objects
   */
-  extractArray: function(store, type, arrayPayload) {
+  extractArray: function(store, type, arrayPayload, id, requestType) {
+    var normalizedPayload = this.normalizePayload(arrayPayload);
     var serializer = this;
-    return map.call(arrayPayload, function(singlePayload) {
+
+    return map.call(normalizedPayload, function(singlePayload) {
       return serializer.normalize(type, singlePayload);
     });
   },
@@ -769,7 +989,9 @@ var JSONSerializer = Ember.Object.extend({
    @param {String} key
    @return {String} normalized key
   */
-
+  keyForAttribute: function(key){
+    return key;
+  },
 
   /**
    `keyForRelationship` can be used to define a custom key when
@@ -792,6 +1014,10 @@ var JSONSerializer = Ember.Object.extend({
    @return {String} normalized key
   */
 
+  keyForRelationship: function(key, type){
+    return key;
+  },
+
   // HELPERS
 
   /**
@@ -807,5 +1033,3 @@ var JSONSerializer = Ember.Object.extend({
     return transform;
   }
 });
-
-export default JSONSerializer;

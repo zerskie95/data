@@ -2,8 +2,8 @@
   @module ember-data
 */
 
-import Adapter from "../system/adapter";
-var get = Ember.get, set = Ember.set;
+import Adapter from "ember-data/system/adapter";
+var get = Ember.get;
 var forEach = Ember.ArrayPolyfills.forEach;
 
 /**
@@ -28,9 +28,30 @@ var forEach = Ember.ArrayPolyfills.forEach;
   ```js
   {
     "post": {
+      "id": 1,
       "title": "I'm Running to Reform the W3C's Tag",
       "author": "Yehuda Katz"
     }
+  }
+  ```
+
+  Similarly, in response to a `GET` request for `/posts`, the JSON should
+  look like this:
+
+  ```js
+  {
+    "posts": [
+      {
+        "id": 1,
+        "title": "I'm Running to Reform the W3C's Tag",
+        "author": "Yehuda Katz"
+      },
+      {
+        "id": 2,
+        "title": "Rails is omakase",
+        "author": "D2H"
+      }
+    ]
   }
   ```
 
@@ -54,6 +75,7 @@ var forEach = Ember.ArrayPolyfills.forEach;
   ```js
   {
     "person": {
+      "id": 5,
       "firstName": "Barack",
       "lastName": "Obama",
       "occupation": "President"
@@ -120,7 +142,7 @@ var forEach = Ember.ArrayPolyfills.forEach;
   object outside of Ember's observer system (for example
   `document.cookie`). You can use the
   [volatile](/api/classes/Ember.ComputedProperty.html#method_volatile)
-  function to set the property into a non-chached mode causing the headers to
+  function to set the property into a non-cached mode causing the headers to
   be recomputed with every request.
 
   ```js
@@ -130,7 +152,7 @@ var forEach = Ember.ArrayPolyfills.forEach;
         "API_KEY": Ember.get(document.cookie.match(/apiKey\=([^;]*)/), "1"),
         "ANOTHER_HEADER": "Some header value"
       };
-    }.property().volatile();
+    }.property().volatile()
   });
   ```
 
@@ -139,8 +161,52 @@ var forEach = Ember.ArrayPolyfills.forEach;
   @namespace DS
   @extends DS.Adapter
 */
-var RESTAdapter = Adapter.extend({
+export default Adapter.extend({
   defaultSerializer: '-rest',
+
+  /**
+    By default the RESTAdapter will send each find request coming from a `store.find`
+    or from accessing a relationship separately to the server. If your server supports passing
+    ids as a query string, you can set coalesceFindRequests to true to coalesce all find requests
+    within a single runloop.
+
+    For example, if you have an initial payload of
+    ```javascript
+    post: {
+      id:1,
+      comments: [1,2]
+    }
+    ```
+
+    By default calling `post.get('comments')` will trigger the following requests(assuming the
+    comments haven't been loaded before):
+
+    ```
+    GET /comments/1
+    GET /comments/2
+    ```
+
+    If you set coalesceFindRequests to `true` it will instead trigger the following request:
+
+    ```
+    GET /comments?ids[]=1&ids[]=2
+    ```
+
+    Setting coalesceFindRequests to `true` also works for `store.find` requests and `belongsTo`
+    relationships accessed within the same runloop. If you set `coalesceFindRequests: true`
+
+    ```javascript
+    store.find('comment', 1);
+    store.find('comment', 2);
+    ```
+
+    will also send a request to: `GET /comments?ids[]=1&ids[]=2`
+
+    @property coalesceFindRequests
+    @type {boolean}
+  */
+  coalesceFindRequests: false,
+
   /**
     Endpoint paths can be prefixed with a `namespace` by setting the namespace
     property on the adapter:
@@ -205,10 +271,11 @@ var RESTAdapter = Adapter.extend({
     @param {DS.Store} store
     @param {subclass of DS.Model} type
     @param {String} id
+    @param {DS.Model} record
     @return {Promise} promise
   */
-  find: function(store, type, id) {
-    return this.ajax(this.buildURL(type.typeKey, id), 'GET');
+  find: function(store, type, id, record) {
+    return this.ajax(this.buildURL(type.typeKey, id, record), 'GET');
   },
 
   /**
@@ -257,9 +324,7 @@ var RESTAdapter = Adapter.extend({
   },
 
   /**
-    Called by the store in order to fetch a JSON array for
-    the unloaded records in a has-many relationship that were originally
-    specified as IDs.
+    Called by the store in order to fetch several records together if `coalesceFindRequests` is true
 
     For example, if the original payload looks like:
 
@@ -288,10 +353,11 @@ var RESTAdapter = Adapter.extend({
     @param {DS.Store} store
     @param {subclass of DS.Model} type
     @param {Array} ids
+    @param {Array} records
     @return {Promise} promise
   */
-  findMany: function(store, type, ids) {
-    return this.ajax(this.buildURL(type.typeKey), 'GET', { data: { ids: ids } });
+  findMany: function(store, type, ids, records) {
+    return this.ajax(this.buildURL(type.typeKey, ids, records), 'GET', { data: { ids: ids } });
   },
 
   /**
@@ -324,9 +390,9 @@ var RESTAdapter = Adapter.extend({
     @return {Promise} promise
   */
   findHasMany: function(store, record, url) {
-    var host = get(this, 'host'),
-        id   = get(record, 'id'),
-        type = record.constructor.typeKey;
+    var host = get(this, 'host');
+    var id   = get(record, 'id');
+    var type = record.constructor.typeKey;
 
     if (host && url.charAt(0) === '/' && url.charAt(1) !== '/') {
       url = host + url;
@@ -363,8 +429,8 @@ var RESTAdapter = Adapter.extend({
     @return {Promise} promise
   */
   findBelongsTo: function(store, record, url) {
-    var id   = get(record, 'id'),
-        type = record.constructor.typeKey;
+    var id   = get(record, 'id');
+    var type = record.constructor.typeKey;
 
     return this.ajax(this.urlPrefix(url, this.buildURL(type, id)), 'GET');
   },
@@ -391,7 +457,7 @@ var RESTAdapter = Adapter.extend({
 
     serializer.serializeIntoHash(data, type, record, { includeId: true });
 
-    return this.ajax(this.buildURL(type.typeKey), "POST", { data: data });
+    return this.ajax(this.buildURL(type.typeKey, null, record), "POST", { data: data });
   },
 
   /**
@@ -418,7 +484,7 @@ var RESTAdapter = Adapter.extend({
 
     var id = get(record, 'id');
 
-    return this.ajax(this.buildURL(type.typeKey, id), "PUT", { data: data });
+    return this.ajax(this.buildURL(type.typeKey, id, record), "PUT", { data: data });
   },
 
   /**
@@ -435,7 +501,7 @@ var RESTAdapter = Adapter.extend({
   deleteRecord: function(store, type, record) {
     var id = get(record, 'id');
 
-    return this.ajax(this.buildURL(type.typeKey, id), "DELETE");
+    return this.ajax(this.buildURL(type.typeKey, id, record), "DELETE");
   },
 
   /**
@@ -451,15 +517,20 @@ var RESTAdapter = Adapter.extend({
     @method buildURL
     @param {String} type
     @param {String} id
+    @param {DS.Model} record
     @return {String} url
   */
-  buildURL: function(type, id) {
+  buildURL: function(type, id, record) {
     var url = [],
         host = get(this, 'host'),
         prefix = this.urlPrefix();
 
     if (type) { url.push(this.pathForType(type)); }
-    if (id) { url.push(id); }
+
+    //We might get passed in an array of ids from findMany
+    //in which case we don't want to modify the url, as the
+    //ids will be passed in through a query param
+    if (id && !Ember.isArray(id)) { url.push(id); }
 
     if (prefix) { url.unshift(prefix); }
 
@@ -477,9 +548,9 @@ var RESTAdapter = Adapter.extend({
     @return {String} urlPrefix
   */
   urlPrefix: function(path, parentURL) {
-    var host = get(this, 'host'),
-        namespace = get(this, 'namespace'),
-        url = [];
+    var host = get(this, 'host');
+    var namespace = get(this, 'namespace');
+    var url = [];
 
     if (path) {
       // Absolute path
@@ -502,6 +573,89 @@ var RESTAdapter = Adapter.extend({
     }
 
     return url.join('/');
+  },
+
+  _stripIDFromURL: function(store, record) {
+    var type = store.modelFor(record);
+    var url = this.buildURL(type.typeKey, record.get('id'), record);
+
+    var expandedURL = url.split('/');
+    //Case when the url is of the format ...something/:id
+    var lastSegment = expandedURL[ expandedURL.length - 1 ];
+    var id = record.get('id');
+    if (lastSegment === id) {
+      expandedURL[expandedURL.length - 1] = "";
+    } else if(endsWith(lastSegment, '?id=' + id)) {
+      //Case when the url is of the format ...something?id=:id
+      expandedURL[expandedURL.length - 1] = lastSegment.substring(0, lastSegment.length - id.length - 1);
+    }
+
+    return expandedURL.join('/');
+  },
+
+  /**
+    Organize records into groups, each of which is to be passed to separate
+    calls to `findMany`.
+
+    This implementation groups together records that have the same base URL but
+    differing ids. For example `/comments/1` and `/comments/2` will be grouped together
+    because we know findMany can coalesce them together as `/comments?ids[]=1&ids[]=2`
+
+    It also supports urls where ids are passed as a query param, such as `/comments?id=1`
+    but not those where there is more than 1 query param such as `/comments?id=2&name=David`
+    Currently only the query param of `id` is supported. If you need to support others, please
+    override this or the `_stripIDFromURL` method.
+
+    It does not group records that have differing base urls, such as for example: `/posts/1/comments/2`
+    and `/posts/2/comments/3`
+
+    @method groupRecordsForFindMany
+    @param {Array} records
+    @return {Array}  an array of arrays of records, each of which is to be
+                      loaded separately by `findMany`.
+  */
+  groupRecordsForFindMany: function (store, records) {
+    var groups = Ember.MapWithDefault.create({defaultValue: function(){return [];}});
+    var adapter = this;
+
+    forEach.call(records, function(record){
+      var baseUrl = adapter._stripIDFromURL(store, record);
+      groups.get(baseUrl).push(record);
+    });
+
+    function splitGroupToFitInUrl(group, maxUrlLength) {
+      var baseUrl = adapter._stripIDFromURL(store, group[0]);
+      var idsSize = 0;
+      var splitGroups = [[]];
+
+      forEach.call(group, function(record) {
+        var additionalLength = '&ids[]='.length + record.get('id.length');
+        if (baseUrl.length + idsSize + additionalLength >= maxUrlLength) {
+          idsSize = 0;
+          splitGroups.push([]);
+        }
+
+        idsSize += additionalLength;
+
+        var lastGroupIndex = splitGroups.length - 1;
+        splitGroups[lastGroupIndex].push(record);
+      });
+
+      return splitGroups;
+    }
+
+    var groupsArray = [];
+    groups.forEach(function(key, group){
+      // http://stackoverflow.com/questions/417142/what-is-the-maximum-length-of-a-url-in-different-browsers
+      var maxUrlLength = 2048;
+      var splitGroups = splitGroupToFitInUrl(group, maxUrlLength);
+
+      forEach.call(splitGroups, function(splitGroup) {
+        groupsArray.push(splitGroup);
+      });
+    });
+
+    return groupsArray;
   },
 
   /**
@@ -599,11 +753,11 @@ var RESTAdapter = Adapter.extend({
     @param {Object} hash
     @return {Promise} promise
   */
-  ajax: function(url, type, hash) {
+  ajax: function(url, type, options) {
     var adapter = this;
 
     return new Ember.RSVP.Promise(function(resolve, reject) {
-      hash = adapter.ajaxOptions(url, type, hash);
+      var hash = adapter.ajaxOptions(url, type, options);
 
       hash.success = function(json) {
         Ember.run(null, resolve, json);
@@ -614,7 +768,7 @@ var RESTAdapter = Adapter.extend({
       };
 
       Ember.$.ajax(hash);
-    }, "DS: RestAdapter#ajax " + type + " to " + url);
+    }, "DS: RESTAdapter#ajax " + type + " to " + url);
   },
 
   /**
@@ -625,8 +779,8 @@ var RESTAdapter = Adapter.extend({
     @param {Object} hash
     @return {Object} hash
   */
-  ajaxOptions: function(url, type, hash) {
-    hash = hash || {};
+  ajaxOptions: function(url, type, options) {
+    var hash = options || {};
     hash.url = url;
     hash.type = type;
     hash.dataType = 'json';
@@ -646,10 +800,16 @@ var RESTAdapter = Adapter.extend({
       };
     }
 
-
     return hash;
   }
-
 });
 
-export default RESTAdapter;
+//From http://stackoverflow.com/questions/280634/endswith-in-javascript
+function endsWith(string, suffix){
+  if (typeof String.prototype.endsWith !== 'function') {
+    return string.indexOf(suffix, string.length - suffix.length) !== -1;
+  } else {
+    return string.endsWith(suffix);
+  }
+}
+

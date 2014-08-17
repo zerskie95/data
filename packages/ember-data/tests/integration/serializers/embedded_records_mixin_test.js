@@ -311,6 +311,85 @@ test("extractArray with embedded objects", function() {
   }));
 });
 
+test("extractArray with embedded objects with custom primary key", function() {
+  expect(2);
+  env.container.register('adapter:superVillain', DS.ActiveModelAdapter);
+  env.container.register('serializer:superVillain', DS.ActiveModelSerializer.extend({
+    primaryKey: 'villain_id'
+  }));
+  env.container.register('serializer:homePlanet', DS.ActiveModelSerializer.extend(DS.EmbeddedRecordsMixin, {
+    attrs: {
+      villains: {embedded: 'always'}
+    }
+  }));
+
+  var serializer = env.container.lookup("serializer:homePlanet");
+
+  var json_hash = {
+    home_planets: [{
+      id: "1",
+      name: "Umber",
+      villains: [{
+        villain_id: "1",
+        first_name: "Alex",
+        last_name: "Baizeau"
+      }]
+    }]
+  };
+
+  var array = serializer.extractArray(env.store, HomePlanet, json_hash);
+
+  deepEqual(array, [{
+    id: "1",
+    name: "Umber",
+    villains: ["1"]
+  }]);
+
+  return env.store.find("superVillain", 1).then(function(minion){
+    env.container.unregister('serializer:superVillain');
+    equal(minion.get('firstName'), "Alex");
+
+  });
+});
+test("extractArray with embedded objects with identical relationship and attribute key ", function() {
+  expect(2);
+  env.container.register('adapter:superVillain', DS.ActiveModelAdapter);
+  env.container.register('serializer:homePlanet', DS.ActiveModelSerializer.extend(DS.EmbeddedRecordsMixin, {
+    attrs: {
+      villains: {embedded: 'always'}
+    },
+    //Makes the keyForRelationship and keyForAttribute collide.
+    keyForRelationship: function(key, type) {
+      return this.keyForAttribute(key, type);
+    }
+  }));
+
+  var serializer = env.container.lookup("serializer:homePlanet");
+
+  var json_hash = {
+    home_planets: [{
+      id: "1",
+      name: "Umber",
+      villains: [{
+        id: "1",
+        first_name: "Alex",
+        last_name: "Baizeau"
+      }]
+    }]
+  };
+
+  var array = serializer.extractArray(env.store, HomePlanet, json_hash);
+
+  deepEqual(array, [{
+    id: "1",
+    name: "Umber",
+    villains: ["1"]
+  }]);
+
+  return env.store.find("superVillain", 1).then(function(minion){
+    equal(minion.get('firstName'), "Alex");
+  });
+});
 test("extractArray with embedded objects of same type as primary type", function() {
   env.container.register('adapter:comment', DS.ActiveModelAdapter);
   env.container.register('serializer:comment', DS.ActiveModelSerializer.extend(DS.EmbeddedRecordsMixin, {
@@ -425,6 +504,24 @@ test("extractArray with embedded objects of same type, but from separate attribu
   equal(env.store.recordForId("superVillain", "6").get("firstName"), "Trek", "Secondary records found in the store");
 });
 
+test("serialize supports serialize:false on non-relationship properties", function() {
+  var tom = env.store.createRecord(SuperVillain, { firstName: "Tom", lastName: "Dale", id: '1' });
+
+  env.container.register('serializer:superVillain', DS.ActiveModelSerializer.extend(DS.EmbeddedRecordsMixin, {
+    attrs: {
+      firstName: {serialize: false}
+    }
+  }));
+  var serializer = env.container.lookup("serializer:superVillain");
+  var json = serializer.serialize(tom);
+
+  deepEqual(json, {
+    last_name: "Dale",
+    home_planet_id: null,
+    secret_lab_id: null
+  });
+});
+
 test("serialize with embedded objects (hasMany relationship)", function() {
   league = env.store.createRecord(HomePlanet, { name: "Villain League", id: "123" });
   var tom = env.store.createRecord(SuperVillain, { firstName: "Tom", lastName: "Dale", homePlanet: league, id: '1' });
@@ -450,13 +547,13 @@ test("serialize with embedded objects (hasMany relationship)", function() {
   });
 });
 
-test("serialize with embedded objects (hasMany relationship) supports serialize:no", function() {
+test("serialize with embedded objects (hasMany relationship) supports serialize:false", function() {
   league = env.store.createRecord(HomePlanet, { name: "Villain League", id: "123" });
   var tom = env.store.createRecord(SuperVillain, { firstName: "Tom", lastName: "Dale", homePlanet: league, id: '1' });
 
   env.container.register('serializer:homePlanet', DS.ActiveModelSerializer.extend(DS.EmbeddedRecordsMixin, {
     attrs: {
-      villains: {serialize: 'no'}
+      villains: {serialize: false}
     }
   }));
   var serializer = env.container.lookup("serializer:homePlanet");
@@ -725,11 +822,11 @@ test("serialize with embedded object (belongsTo relationship) supports serialize
   });
 });
 
-test("serialize with embedded object (belongsTo relationship) supports serialize:no", function() {
+test("serialize with embedded object (belongsTo relationship) supports serialize:false", function() {
   env.container.register('adapter:superVillain', DS.ActiveModelAdapter);
   env.container.register('serializer:superVillain', DS.ActiveModelSerializer.extend(DS.EmbeddedRecordsMixin, {
     attrs: {
-      secretLab: {serialize: 'no'}
+      secretLab: {serialize: false}
     }
   }));
   var serializer = env.container.lookup("serializer:superVillain");
@@ -844,6 +941,76 @@ test("extractSingle with multiply-nested belongsTo", function() {
   equal(env.store.recordForId("homePlanet", "1").get("name"), "Umber", "Nested Secondary record, Umber, found in the store");
 });
 
+test("Mixin can be used with RESTSerializer which does not define keyForAttribute", function() {
+  homePlanet = env.store.createRecord(HomePlanet, { name: "Villain League", id: "123" });
+  secretLab = env.store.createRecord(SecretLab, { minionCapacity: 5000, vicinity: "California, USA", id: "101" });
+  superVillain = env.store.createRecord(SuperVillain, {
+    id: "1", firstName: "Super", lastName: "Villian", homePlanet: homePlanet, secretLab: secretLab
+  });
+  secretWeapon = env.store.createRecord(SecretWeapon, { id: "1", name: "Secret Weapon", superVillain: superVillain });
+  superVillain.get('secretWeapons').pushObject(secretWeapon);
+  evilMinion = env.store.createRecord(EvilMinion, { id: "1", name: "Evil Minion", superVillian: superVillain });
+  superVillain.get('evilMinions').pushObject(evilMinion);
+
+  env.container.register('serializer:evilMinion', DS.RESTSerializer);
+  env.container.register('serializer:secretWeapon', DS.RESTSerializer);
+  env.container.register('serializer:superVillain', DS.RESTSerializer.extend(DS.EmbeddedRecordsMixin, {
+    attrs: {
+      evilMinions: {serialize: 'records', deserialize: 'records'}
+    }
+  }));
+  var serializer = env.container.lookup("serializer:superVillain");
+
+  var json = serializer.serialize(superVillain);
+  deepEqual(json, {
+    firstName: get(superVillain, "firstName"),
+    lastName: get(superVillain, "lastName"),
+    homePlanet: "123",
+    evilMinions: [{
+      id: get(evilMinion, "id"),
+      name: get(evilMinion, "name"),
+      superVillain: "1"
+    }],
+    secretLab: "101"
+    // "manyToOne" relation does not serialize ids
+    // sersecretWeapons: ["1"]
+  });
+});
+
+test("normalize with custom belongsTo primary key", function() {
+  env.container.register('adapter:evilMinion', DS.ActiveModelAdapter);
+  env.container.register('serializer:evilMinion', DS.ActiveModelSerializer.extend(DS.EmbeddedRecordsMixin, {
+    attrs: {
+      superVillain: {embedded: 'always'}
+    }
+  }));
+  env.container.register('serializer:superVillain', DS.ActiveModelSerializer.extend({
+    primaryKey: 'custom'
+  }));
+
+  var serializer = env.container.lookup("serializer:evilMinion");
+  var json_hash = {
+    evil_minion: {
+      id: "1",
+      name: "Alex",
+      super_villain: {
+        custom: "1",
+        first_name: "Tom",
+        last_name: "Dale"
+      }
+    }
+  };
+  var json = serializer.extractSingle(env.store, EvilMinion, json_hash);
+
+  deepEqual(json, {
+    id: "1",
+    name: "Alex",
+    superVillain: "1"
+  }, "Primary array was correct");
+
+  equal(env.store.recordForId("superVillain", "1").get("firstName"), "Tom", "Secondary record, Tom, found in the steore");
+});
+
 test("serializing relationships with an embedded and without calls super when not attr not present", function() {
   homePlanet = env.store.createRecord(HomePlanet, { name: "Villain League", id: "123" });
   secretLab = env.store.createRecord(SecretLab, { minionCapacity: 5000, vicinity: "California, USA", id: "101" });
@@ -858,21 +1025,9 @@ test("serializing relationships with an embedded and without calls super when no
   var calledSerializeBelongsTo = false, calledSerializeHasMany = false;
 
   var Serializer = DS.RESTSerializer.extend({
-    keyForAttribute: function(attr) {
-      return camelize(attr);
-    },
-    keyForRelationship: function(key, kind) {
-      key = camelize(key);
-      if (kind === "belongsTo") {
-        key += "Id";
-      } else if (kind === "hasMany") {
-        key = singularize(key) + "Ids";
-      }
-      return key;
-    },
     serializeBelongsTo: function(record, json, relationship) {
       calledSerializeBelongsTo = true;
-      return DS.RESTSerializer.prototype.serializeBelongsTo.call(this, record, json, relationship);
+      return this._super(record, json, relationship);
     },
     serializeHasMany: function(record, json, relationship) {
       calledSerializeHasMany = true;
@@ -880,7 +1035,6 @@ test("serializing relationships with an embedded and without calls super when no
       var payloadKey = this.keyForRelationship ? this.keyForRelationship(key, "hasMany") : key;
       var relationshipType = DS.RelationshipChange.determineRelationshipType(record.constructor, relationship);
       // "manyToOne" not supported in DS.RESTSerializer.prototype.serializeHasMany
-      // See: https://github.com/emberjs/data/pull/1751#issuecomment-43424605
       var relationshipTypes = Ember.String.w('manyToNone manyToMany manyToOne');
       if (indexOf(relationshipTypes, relationshipType) > -1) {
         json[payloadKey] = get(record, key).mapBy('id');
@@ -902,14 +1056,15 @@ test("serializing relationships with an embedded and without calls super when no
   deepEqual(json, {
     firstName: get(superVillain, "firstName"),
     lastName: get(superVillain, "lastName"),
-    homePlanetId: "123",
+    homePlanet: "123",
     evilMinions: [{
       id: get(evilMinion, "id"),
       name: get(evilMinion, "name"),
-      superVillainId: "1"
+      superVillain: "1"
     }],
-    secretLabId: "101",
-    secretWeaponIds: ["1"]
+    secretLab: "101",
+    // customized serializeHasMany method to generate ids for "manyToOne" relation
+    secretWeapons: ["1"]
   });
   ok(calledSerializeBelongsTo);
   ok(calledSerializeHasMany);

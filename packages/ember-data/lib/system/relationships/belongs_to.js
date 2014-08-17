@@ -1,12 +1,16 @@
-var get = Ember.get, set = Ember.set,
-    isNone = Ember.isNone;
-
+var get = Ember.get;
+var set = Ember.set;
+var isNone = Ember.isNone;
 var Promise = Ember.RSVP.Promise;
 
-import {Model} from "../model";
-import {PromiseObject} from "../store";
-import {RelationshipChange} from "../changes";
-import {relationshipFromMeta, typeForRelationshipMeta} from "../relationship-meta";
+import { Model } from 'ember-data/system/model';
+import { PromiseObject } from 'ember-data/system/store';
+import { RelationshipChange } from 'ember-data/system/changes';
+import {
+  relationshipFromMeta,
+  typeForRelationshipMeta,
+  isSyncRelationship
+} from 'ember-data/system/relationship-meta';
 
 /**
   @module ember-data
@@ -14,10 +18,10 @@ import {relationshipFromMeta, typeForRelationshipMeta} from "../relationship-met
 
 function asyncBelongsTo(type, options, meta) {
   return Ember.computed('data', function(key, value) {
-    var data = get(this, 'data'),
-        store = get(this, 'store'),
-        promiseLabel = "DS: Async belongsTo " + this + " : " + key,
-        promise;
+    var data = get(this, 'data');
+    var store = get(this, 'store');
+    var promiseLabel = "DS: Async belongsTo " + this + " : " + key;
+    var promise;
 
     meta.key = key;
 
@@ -28,11 +32,17 @@ function asyncBelongsTo(type, options, meta) {
       });
     }
 
-    var link = data.links && data.links[key],
-        belongsTo = data[key];
+    var link = data.links && data.links[key];
+    var belongsTo = data[key];
 
-    if(!isNone(belongsTo)) {
-      promise = store.fetchRecord(belongsTo) || Promise.cast(belongsTo, promiseLabel);
+    if (!isNone(belongsTo)) {
+      var inverse = this.constructor.inverseFor(key);
+      //but for now only in the oneToOne case
+      if (inverse && inverse.kind === 'belongsTo'){
+        set(belongsTo, inverse.name, this);
+      }
+      //TODO(Igor) after OR doesn't seem that will be called
+      promise = store.findById(belongsTo.constructor, belongsTo.get('id')) || Promise.cast(belongsTo, promiseLabel);
       return PromiseObject.create({
         promise: promise
       });
@@ -117,8 +127,9 @@ function belongsTo(type, options) {
   }
 
   return Ember.computed('data', function(key, value) {
-    var data = get(this, 'data'),
-        store = get(this, 'store'), belongsTo, typeClass;
+    var data = get(this, 'data');
+    var store = get(this, 'store');
+    var belongsTo, typeClass;
 
     if (typeof type === 'string') {
       typeClass = store.modelFor(type);
@@ -135,7 +146,7 @@ function belongsTo(type, options) {
 
     if (isNone(belongsTo)) { return null; }
 
-    store.fetchRecord(belongsTo);
+    store.findById(belongsTo.constructor, belongsTo.get('id'));
 
     return belongsTo;
   }).meta(meta);
@@ -158,12 +169,16 @@ Model.reopen({
     @param key
   */
   belongsToWillChange: Ember.beforeObserver(function(record, key) {
-    if (get(record, 'isLoaded')) {
+    if (get(record, 'isLoaded') && isSyncRelationship(record, key)) {
       var oldParent = get(record, key);
 
       if (oldParent) {
-        var store = get(record, 'store'),
-            change = RelationshipChange.createChange(record, oldParent, store, { key: key, kind: "belongsTo", changeType: "remove" });
+        var store = get(record, 'store');
+        var change = RelationshipChange.createChange(record, oldParent, store, {
+          key: key,
+          kind: 'belongsTo',
+          changeType: 'remove'
+        });
 
         change.sync();
         this._changesToSync[key] = change;
@@ -183,8 +198,12 @@ Model.reopen({
       var newParent = get(record, key);
 
       if (newParent) {
-        var store = get(record, 'store'),
-            change = RelationshipChange.createChange(record, newParent, store, { key: key, kind: "belongsTo", changeType: "add" });
+        var store = get(record, 'store');
+        var change = RelationshipChange.createChange(record, newParent, store, {
+          key: key,
+          kind: 'belongsTo',
+          changeType: 'add'
+        });
 
         change.sync();
       }

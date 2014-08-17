@@ -1,4 +1,5 @@
-var get = Ember.get, isEmpty = Ember.isEmpty;
+var get = Ember.get;
+var isEmpty = Ember.isEmpty;
 var map = Ember.EnumerableUtils.map;
 
 /**
@@ -11,6 +12,9 @@ var map = Ember.EnumerableUtils.map;
   Every DS.Model has an `errors` property that is an instance of
   `DS.Errors`. This can be used to display validation error
   messages returned from the server when a `record.save()` rejects.
+  This works automatically with `DS.ActiveModelAdapter`, but you
+  can implement [ajaxError](api/data/classes/DS.RESTAdapter.html#method_ajaxError)
+  in other adapters as well.
 
   For Example, if you had an `User` model that looked like this:
 
@@ -73,7 +77,7 @@ var map = Ember.EnumerableUtils.map;
   @uses Ember.Enumerable
   @uses Ember.Evented
  */
-var Errors = Ember.Object.extend(Ember.Enumerable, Ember.Evented, {
+export default Ember.Object.extend(Ember.Enumerable, Ember.Evented, {
   /**
     Register with target handler
 
@@ -334,5 +338,3 @@ var Errors = Ember.Object.extend(Ember.Enumerable, Ember.Evented, {
     return !isEmpty(this.errorsFor(attribute));
   }
 });
-
-export default Errors;

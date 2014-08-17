@@ -2,7 +2,8 @@
   @module ember-data
 */
 
-var get = Ember.get, set = Ember.set;
+var get = Ember.get;
+var set = Ember.set;
 /*
   This file encapsulates the various states that a record can transition
   through during its lifecycle.
@@ -16,7 +17,7 @@ var get = Ember.get, set = Ember.set;
   it would be in the `root.loaded.created.uncommitted` state.  If a
   record has had local modifications made to it that are in the
   process of being saved, the record would be in the
-  `root.loaded.updated.inFlight` state. (These state paths will be
+  `root.loaded.updated.inFlight` state. (This state paths will be
   explained in more detail below.)
 
   Events are sent by the record or its store to the record's
@@ -60,7 +61,7 @@ var get = Ember.get, set = Ember.set;
     * loading
   ```
 
-  The `DS.Model` states are themselves stateless. What we mean is
+  The `DS.Model` states are themselves stateless. What that means is
   that, the hierarchical states that each of *those* points to is a
   shared data structure. For performance reasons, instead of each
   record getting its own copy of the hierarchy of states, each record
@@ -252,6 +253,10 @@ var DirtyState = {
   uncommitted: {
     // EVENTS
     didSetProperty: didSetProperty,
+
+    //TODO(Igor) reloading now triggers a
+    //loadingData event, though it seems fine?
+    loadingData: Ember.K,
 
     propertyWasReset: function(record, name) {
       var stillDirty = false;
@@ -535,14 +540,18 @@ var RootState = {
     // FLAGS
     isLoaded: true,
 
+    //TODO(Igor) Reloading now triggers a loadingData event,
+    //but it should be ok?
+    loadingData: Ember.K,
+
     // SUBSTATES
 
     // If there are no local changes to a record, it remains
     // in the `saved` state.
     saved: {
       setup: function(record) {
-        var attrs = record._attributes,
-            isDirty = false;
+        var attrs = record._attributes;
+        var isDirty = false;
 
         for (var prop in attrs) {
           if (attrs.hasOwnProperty(prop)) {
