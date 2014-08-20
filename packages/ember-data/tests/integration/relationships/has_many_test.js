@@ -9,6 +9,8 @@ function stringify(string) {
 
 module("integration/relationships/has_many - Has-Many Relationships", {
   setup: function() {
+    Ember.MODEL_FACTORY_INJECTIONS = true;
+
     User = DS.Model.extend({
       name: attr('string'),
       messages: hasMany('message', { polymorphic: true }),
@@ -41,7 +43,7 @@ module("integration/relationships/has_many - Has-Many Relationships", {
 
     Comment = Message.extend({
       body: DS.attr('string'),
-      message: DS.belongsTo('post', { polymorphic: true })
+      message: DS.belongsTo('message', { polymorphic: true })
     });
     Comment.toString = stringify('Comment');
 
@@ -58,6 +60,7 @@ module("integration/relationships/has_many - Has-Many Relationships", {
 
   teardown: function() {
     env.container.destroy();
+    Ember.MODEL_FACTORY_INJECTIONS = false;
   }
 });
 

@@ -129,16 +129,10 @@ function belongsTo(type, options) {
   return Ember.computed('data', function(key, value) {
     var data = get(this, 'data');
     var store = get(this, 'store');
-    var belongsTo, typeClass;
-
-    if (typeof type === 'string') {
-      typeClass = store.modelFor(type);
-    } else {
-      typeClass = type;
-    }
+    var belongsTo;
 
     if (arguments.length === 2) {
-      Ember.assert("You can only add a '" + type + "' record to this relationship", !value || value instanceof typeClass);
+      Ember.assert("You can only add a '" + type + "' record to this relationship", !value || value instanceof this.container.resolve('model:' + ((typeof type === 'string') ? type : type.typeKey)));
       return value === undefined ? null : value;
     }
 

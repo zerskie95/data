@@ -10,6 +10,8 @@ function stringify(string) {
 
 module("integration/relationship/belongs_to Belongs-To Relationships", {
   setup: function() {
+    Ember.MODEL_FACTORY_INJECTIONS = true;
+
     User = DS.Model.extend({
       name: attr('string'),
       messages: hasMany('message', {polymorphic: true}),
@@ -57,6 +59,7 @@ module("integration/relationship/belongs_to Belongs-To Relationships", {
 
   teardown: function() {
     env.container.destroy();
+    Ember.MODEL_FACTORY_INJECTIONS = false;
   }
 });
 
@@ -176,7 +179,7 @@ test("A serializer can materialize a belongsTo as a link that gets sent back to 
   };
 
   env.adapter.findBelongsTo = async(function(store, record, link, relationship) {
-    equal(relationship.type, Group);
+    equal(relationship.type, env.container.lookupFactory('model:group'));
     equal(relationship.key, 'group');
     equal(link, "/people/1/group");
 
