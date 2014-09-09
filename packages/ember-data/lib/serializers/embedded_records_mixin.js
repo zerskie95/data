@@ -2,8 +2,6 @@ var get = Ember.get;
 var forEach = Ember.EnumerableUtils.forEach;
 var camelize = Ember.String.camelize;
 
-import {pluralize} from "ember-inflector";
-
 /**
   ## Using Embedded Records
 
@@ -22,6 +20,11 @@ import {pluralize} from "ember-inflector";
     }
   })
   ```
+  Note that this use of `{embedded: 'always'}` is unrelated to
+  the `{embedded: 'always'}` that is defined as an option on `DS.attr` as part of
+  defining a model while working with the ActiveModelSerializer.  Nevertheless,
+  using `{embedded: 'always'}` as an option to DS.attr is not a valid way to setup
+  embedded records.
 
   The `attrs` option for a resource `{embedded: 'always'}` is shorthand for:
 
@@ -55,7 +58,11 @@ import {pluralize} from "ember-inflector";
 
   ### Model Relationships
 
-  Embedded records must have a model defined to be extracted and serialized.
+  Embedded records must have a model defined to be extracted and serialized. Note that
+  when defining any relationships on your model such as `belongsTo` and `hasMany`, you
+  should not both specify `async:true` and also indicate through the serializer's
+  `attrs` attribute that the related model should be embedded.  If a model is
+  declared embedded, then do not use `async:true`.
 
   To successfully extract and serialize embedded records the model relationships
   must be setup correcty See the
@@ -67,9 +74,9 @@ import {pluralize} from "ember-inflector";
 
   ### Example JSON payloads, Models and Serializers
 
-  **When customizing a serializer it is imporant to grok what the cusomizations
-  are, please read the docs for the methods this mixin provides, in case you need
-  to modify to fit your specific needs.**
+  **When customizing a serializer it is important to grok what the customizations
+  are. Please read the docs for the methods this mixin provides, in case you need
+  to modify it to fit your specific needs.**
 
   For example review the docs for each method of this mixin:
   * [normalize](/api/data/classes/DS.EmbeddedRecordsMixin.html#method_normalize)
@@ -172,7 +179,6 @@ var EmbeddedRecordsMixin = Ember.Mixin.create({
   */
   serializeBelongsTo: function(record, json, relationship) {
     var attr = relationship.key;
-    var attrs = this.get('attrs');
     if (this.noSerializeOptionSpecified(attr)) {
       this._super(record, json, relationship);
       return;
@@ -282,7 +288,6 @@ var EmbeddedRecordsMixin = Ember.Mixin.create({
   */
   serializeHasMany: function(record, json, relationship) {
     var attr = relationship.key;
-    var attrs = this.get('attrs');
     if (this.noSerializeOptionSpecified(attr)) {
       this._super(record, json, relationship);
       return;
@@ -357,8 +362,6 @@ var EmbeddedRecordsMixin = Ember.Mixin.create({
   // checks config for attrs option to serialize records
   noSerializeOptionSpecified: function(attr) {
     var option = this.attrsOption(attr);
-    var serializeRecords = this.hasSerializeRecordsOption(attr);
-    var serializeIds = this.hasSerializeIdsOption(attr);
     return !(option && (option.serialize || option.embedded));
   },
 
@@ -385,7 +388,12 @@ function extractEmbeddedRecords(serializer, store, type, partial) {
     if (serializer.hasDeserializeRecordsOption(key)) {
       var embeddedType = store.modelFor(relationship.type.typeKey);
       if (relationship.kind === "hasMany") {
-        extractEmbeddedHasMany(store, key, embeddedType, partial);
+        if (relationship.options.polymorphic) {
+          extractEmbeddedHasManyPolymorphic(store, key, partial);
+        }
+        else {
+          extractEmbeddedHasMany(store, key, embeddedType, partial);
+        }
       }
       if (relationship.kind === "belongsTo") {
         extractEmbeddedBelongsTo(store, key, embeddedType, partial);
@@ -409,6 +417,28 @@ function extractEmbeddedHasMany(store, key, embeddedType, hash) {
     var embeddedRecord = embeddedSerializer.normalize(embeddedType, data, null);
     store.push(embeddedType, embeddedRecord);
     ids.push(embeddedRecord.id);
+  });
+
+  hash[key] = ids;
+  return hash;
+}
+
+function extractEmbeddedHasManyPolymorphic(store, key, hash) {
+  if (!hash[key]) {
+    return hash;
+  }
+
+  var ids = [];
+
+  forEach(hash[key], function(data) {
+    var typeKey = data.type;
+    var embeddedSerializer = store.serializerFor(typeKey);
+    var embeddedType = store.modelFor(typeKey);
+    var primaryKey = get(embeddedSerializer, 'primaryKey');
+
+    var embeddedRecord = embeddedSerializer.normalize(embeddedType, data, null);
+    store.push(embeddedType, embeddedRecord);
+    ids.push({ id: embeddedRecord[primaryKey], type: typeKey });
   });
 
   hash[key] = ids;

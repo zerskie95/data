@@ -13,7 +13,7 @@ module("integration/adapter/fixture_adapter - DS.FixtureAdapter", {
     });
 
     Phone = DS.Model.extend({
-      person: DS.belongsTo('person')
+      person: DS.belongsTo('person', { async: true})
     });
 
     env = setupStore({ person: Person, phone: Phone, adapter: DS.FixtureAdapter });
@@ -220,10 +220,9 @@ test("should coerce belongsTo ids into string", function() {
   }];
 
   env.store.find('phone', 1).then(async(function(result) {
-    var person = get(result, 'person');
-    person.one('didLoad', async(function() {
-      strictEqual(get(result, 'person.id'), "1", "should load integer belongsTo id as string");
-      strictEqual(get(result, 'person.firstName'), "Adam", "resolved relationship with an integer belongsTo id");
+    get(result, 'person').then(async(function(person) {
+      strictEqual(get(person, 'id'), "1", "should load integer belongsTo id as string");
+      strictEqual(get(person, 'firstName'), "Adam", "resolved relationship with an integer belongsTo id");
     }));
   }));
 });
@@ -236,7 +235,9 @@ test("only coerce belongsTo ids to string if id is defined and not null", functi
   }];
 
   env.store.find('phone', 1).then(async(function(phone) {
-    equal(phone.get('person'), null);
+    phone.get('person').then(async(function(person) {
+      equal(person, null);
+    }));
   }));
 });
 
@@ -259,5 +260,37 @@ test("should throw if ids are not defined in the FIXTURES", function() {
     ok(true, "0 is an acceptable ID, so no exception was thrown");
   }), function() {
     ok(false, "should not get here");
+  });
+});
+
+asyncTest("copies fixtures instead of passing the direct reference", function(){
+  var returnedFixture;
+
+  expect(2);
+
+  Person.FIXTURES = [{
+    id: '1',
+    firstName: 'Katie',
+    lastName: 'Gengler'
+  }];
+
+  var PersonAdapter = DS.FixtureAdapter.extend({
+    find: function(store, type, id){
+      return this._super(store, type, id).then(function(fixture){
+        return returnedFixture = fixture;
+      });
+    }
+  });
+
+  Ember.run(function(){
+    env.container.register('adapter:person', PersonAdapter);
+  });
+
+  env.store.find('person', 1).then(function(){
+    start();
+    ok(Person.FIXTURES[0] !== returnedFixture, 'returnedFixture does not have object identity with defined fixture');
+    deepEqual(Person.FIXTURES[0], returnedFixture);
+  }, function(err){
+    ok(false, 'got error' + err);
   });
 });

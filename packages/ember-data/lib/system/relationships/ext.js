@@ -1,4 +1,3 @@
-import { singularize } from "ember-inflector/system";
 import {
   typeForRelationshipMeta,
   relationshipFromMeta
@@ -6,7 +5,6 @@ import {
 import { Model } from "ember-data/system/model";
 
 var get = Ember.get;
-var set = Ember.set;
 
 /**
   @module ember-data
@@ -57,11 +55,6 @@ Model.reopen({
       // populated by the `DS.belongsTo` helper when it is creating
       // the computed property.
       var meta = value.meta();
-
-      if (meta.isRelationship && meta.kind === 'belongsTo') {
-        Ember.addObserver(proto, key, null, 'belongsToDidChange');
-        Ember.addBeforeObserver(proto, key, null, 'belongsToWillChange');
-      }
 
       meta.parentType = proto.constructor;
     }
@@ -444,7 +437,28 @@ Model.reopenClass({
     get(this, 'relatedTypes').forEach(function(type) {
       callback.call(binding, type);
     });
+  },
+
+  determineRelationshipType: function(knownSide) {
+    var knownKey = knownSide.key;
+    var knownKind = knownSide.kind;
+    var inverse = this.inverseFor(knownKey);
+    var key, otherKind;
+
+    if (!inverse) {
+      return knownKind === 'belongsTo' ? 'oneToNone' : 'manyToNone';
+    }
+
+    key = inverse.name;
+    otherKind = inverse.kind;
+
+    if (otherKind === 'belongsTo') {
+      return knownKind === 'belongsTo' ? 'oneToOne' : 'manyToOne';
+    } else {
+      return knownKind === 'belongsTo' ? 'oneToMany' : 'manyToMany';
+    }
   }
+
 });
 
 Model.reopen({
@@ -459,5 +473,14 @@ Model.reopen({
   */
   eachRelationship: function(callback, binding) {
     this.constructor.eachRelationship(callback, binding);
+  },
+
+  relationshipFor: function(name) {
+    return get(this.constructor, 'relationshipsByName').get(name);
+  },
+
+  inverseFor: function(key) {
+    return this.constructor.inverseFor(key);
   }
+
 });

@@ -10,14 +10,14 @@ module("integration/embedded_records_mixin - EmbeddedRecordsMixin", {
     SuperVillain = DS.Model.extend({
       firstName:       DS.attr('string'),
       lastName:        DS.attr('string'),
-      homePlanet:      DS.belongsTo("homePlanet"),
+      homePlanet:      DS.belongsTo("homePlanet", {inverse: 'villains'}),
       secretLab:       DS.belongsTo("secretLab"),
       secretWeapons:   DS.hasMany("secretWeapon"),
       evilMinions:     DS.hasMany("evilMinion")
     });
     HomePlanet = DS.Model.extend({
       name:            DS.attr('string'),
-      villains:        DS.hasMany('superVillain')
+      villains:        DS.hasMany('superVillain', {inverse: 'homePlanet'})
     });
     SecretLab = DS.Model.extend({
       minionCapacity:  DS.attr('number'),
@@ -27,6 +27,9 @@ module("integration/embedded_records_mixin - EmbeddedRecordsMixin", {
     SecretWeapon = DS.Model.extend({
       name:            DS.attr('string'),
       superVillain:    DS.belongsTo('superVillain')
+    });
+    LightSaber = SecretWeapon.extend({
+      color:           DS.attr('string')
     });
     EvilMinion = DS.Model.extend({
       superVillain:    DS.belongsTo('superVillain'),
@@ -42,6 +45,7 @@ module("integration/embedded_records_mixin - EmbeddedRecordsMixin", {
       homePlanet:      HomePlanet,
       secretLab:       SecretLab,
       secretWeapon:    SecretWeapon,
+      lightSaber:      LightSaber,
       evilMinion:      EvilMinion,
       comment:         Comment
     });
@@ -49,6 +53,7 @@ module("integration/embedded_records_mixin - EmbeddedRecordsMixin", {
     env.store.modelFor('homePlanet');
     env.store.modelFor('secretLab');
     env.store.modelFor('secretWeapon');
+    env.store.modelFor('lightSaber');
     env.store.modelFor('evilMinion');
     env.store.modelFor('comment');
     env.container.register('serializer:application', DS.ActiveModelSerializer.extend(DS.EmbeddedRecordsMixin));
@@ -229,7 +234,7 @@ test("extractSingle with embedded objects inside embedded objects of same type",
 
 test("extractSingle with embedded objects of same type, but from separate attributes", function() {
   HomePlanet.reopen({
-    reformedVillains: DS.hasMany('superVillain')
+    reformedVillains: DS.hasMany('superVillain', {inverse: null})
   });
 
   env.container.register('adapter:home_planet', DS.ActiveModelAdapter);
@@ -941,6 +946,58 @@ test("extractSingle with multiply-nested belongsTo", function() {
   equal(env.store.recordForId("homePlanet", "1").get("name"), "Umber", "Nested Secondary record, Umber, found in the store");
 });
 
+test("extractSingle with polymorphic hasMany", function() {
+  SuperVillain.reopen({
+    secretWeapons: DS.hasMany("secretWeapon", {polymorphic: true}),
+  });
+
+  env.container.register('adapter:superVillain', DS.ActiveModelAdapter);
+  env.container.register('serializer:superVillain', DS.ActiveModelSerializer.extend(DS.EmbeddedRecordsMixin, {
+    attrs: {
+      secretWeapons: {embedded: 'always'}
+    }
+  }));
+  var serializer = env.container.lookup("serializer:superVillain");
+
+  var json_hash = {
+    super_villain: {
+      id: "1",
+      first_name: "Tom",
+      last_name: "Dale",
+      secret_weapons: [
+        {
+          id: "1",
+          type: "LightSaber",
+          name: "Tom's LightSaber",
+          color: "Red"
+        },
+        {
+          id: "1",
+          type: "SecretWeapon",
+          name: "The Death Star"
+        }
+      ]
+    }
+  };
+
+  var json = serializer.extractSingle(env.store, SuperVillain, json_hash);
+
+  deepEqual(json, {
+    id: "1",
+    firstName: "Tom",
+    lastName: "Dale",
+    secretWeapons: [
+      {id: "1", type: "lightSaber"},
+      {id: "1", type: "secretWeapon"}
+    ]
+  }, "Primary array was correct");
+
+  equal(env.store.recordForId("secretWeapon", "1").get("name"), "The Death Star", "Embedded polymorphic SecretWeapon found");
+  equal(env.store.recordForId("lightSaber", "1").get("name"), "Tom's LightSaber", "Embedded polymorphic LightSaber found");
+
+
+});
+
 test("Mixin can be used with RESTSerializer which does not define keyForAttribute", function() {
   homePlanet = env.store.createRecord(HomePlanet, { name: "Villain League", id: "123" });
   secretLab = env.store.createRecord(SecretLab, { minionCapacity: 5000, vicinity: "California, USA", id: "101" });
@@ -1033,7 +1090,7 @@ test("serializing relationships with an embedded and without calls super when no
       calledSerializeHasMany = true;
       var key = relationship.key;
       var payloadKey = this.keyForRelationship ? this.keyForRelationship(key, "hasMany") : key;
-      var relationshipType = DS.RelationshipChange.determineRelationshipType(record.constructor, relationship);
+      var relationshipType = record.constructor.determineRelationshipType(relationship);
       // "manyToOne" not supported in DS.RESTSerializer.prototype.serializeHasMany
       var relationshipTypes = Ember.String.w('manyToNone manyToMany manyToOne');
       if (indexOf(relationshipTypes, relationshipType) > -1) {

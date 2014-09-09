@@ -4,7 +4,6 @@
 
 import JSONSerializer from "ember-data/serializers/json_serializer";
 var get = Ember.get;
-var set = Ember.set;
 var forEach = Ember.ArrayPolyfills.forEach;
 var map = Ember.ArrayPolyfills.map;
 var camelize = Ember.String.camelize;
@@ -685,7 +684,7 @@ export default JSONSerializer.extend({
 
   /**
     You can use this method to customize the root keys serialized into the JSON.
-    By default the REST Serializer sends the typeKey of a model, whih is a camelized
+    By default the REST Serializer sends the typeKey of a model, which is a camelized
     version of the name.
 
     For example, your server may expect underscored root objects.
