@@ -137,6 +137,23 @@ export default Ember.ArrayProxy.extend(Ember.Evented, {
   },
 
   /**
+    Adds records to the array
+
+    @method addRecords
+    @private
+    @param {DS.Model} record
+    @param {DS.Model} an optional index to insert at
+  */
+  addRecords: function(records, idx) {
+    var content = get(this, 'content');
+    if (idx === undefined) {
+      content.pushObjects(records);
+    } else {
+      content.replace(idx, 0, records);
+    }
+  },
+
+  /**
     Adds a record to the `RecordArray`, but allows duplicates
 
     @method pushRecord
