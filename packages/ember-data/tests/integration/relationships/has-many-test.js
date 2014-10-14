@@ -450,6 +450,81 @@ test("A hasMany relationship can be reloaded if it was fetched via ids", functio
   });
 });
 
+test("A hasMany relationship can be reloaded even if it failed at the first time", function() {
+  expect(4);
+
+  Post.reopen({
+    comments: DS.hasMany('comment', { async: true })
+  });
+
+  env.adapter.find = function(store, type, id) {
+    return Ember.RSVP.resolve({ id: 1, links: { comments: "/posts/1/comments" } });
+  };
+
+  var loadingCount = -1;
+  env.adapter.findHasMany = function(store, record, link, relationship) {
+    loadingCount++;
+    if (loadingCount % 2 === 0) {
+      return Ember.RSVP.reject()
+    } else {
+      return Ember.RSVP.resolve([
+        { id: 1, body: "FirstUpdated" },
+        { id: 2, body: "Second" }
+      ]);
+    }
+  };
+  run(function(){
+    env.store.find('post', 1).then(async(function(post) {
+      var comments = post.get('comments');
+      return comments.then(null, async(function() {
+        return comments.reload();
+      })).then(async(function(manyArray){
+        equal(manyArray.get('isLoaded'), true, "the reload worked, comments are now loaded");
+        return manyArray.reload().then(null, async(function () {
+          equal(manyArray.get('isLoaded'), false, "the second reload failed, comments are not loaded");
+          return manyArray.reload().then(async(function(reloadedManyArray){
+            equal(reloadedManyArray.get('isLoaded'), true, "the third reload worked, comments are loaded again");
+            ok(reloadedManyArray === manyArray, "the many array stays the same");
+          }));
+        }));
+      }));
+    }));
+  });
+});
+
+test("A hasMany relationship can be directly reloaded if it was fetched via links", function() {
+  expect(6);
+
+  Post.reopen({
+    comments: DS.hasMany('comment', { async: true })
+  });
+
+  env.adapter.find = function(store, type, id) {
+    equal(type, Post, "find type was Post");
+    equal(id, "1", "find id was 1");
+
+    return Ember.RSVP.resolve({ id: 1, links: { comments: "/posts/1/comments" } });
+  };
+
+  env.adapter.findHasMany = function(store, record, link, relationship) {
+    equal(link, "/posts/1/comments", "findHasMany link was /posts/1/comments");
+
+    return Ember.RSVP.resolve([
+      { id: 1, body: "FirstUpdated" },
+      { id: 2, body: "Second" }
+    ]);
+  };
+  run(function(){
+    env.store.find('post', 1).then(async(function(post) {
+      return post.get('comments').reload().then(async(function(comments) {
+        equal(comments.get('isLoaded'), true, "comments are loaded");
+        equal(comments.get('length'), 2, "comments have 2 length");
+        equal(comments.get('firstObject.body'), "FirstUpdated", "Record body was correctly updated");
+      }));
+    }));
+  });
+});
+
 test("A hasMany relationship can be directly reloaded if it was fetched via ids", function() {
   Post.reopen({
     comments: DS.hasMany('comment', { async: true })
