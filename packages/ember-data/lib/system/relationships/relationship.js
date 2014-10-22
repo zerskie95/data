@@ -61,6 +61,34 @@ Relationship.prototype = {
     });
   },
 
+  serverAddRecords: function(records, idx) {
+    for (var i=0; i<records.length; i++) {
+      if (idx !== undefined) {
+        this.serverAddRecord(records[i], i+idx);
+      } else {
+        this.serverAddRecord(records[i]);
+      }
+    }
+  },
+
+  serverAddRecord: function( record, idx) {
+    this.addRecord(record, idx);
+  },
+
+  serverRemoveRecords: function(records, idx) {
+    for (var i=0; i<records.length; i++) {
+      if (idx !== undefined) {
+        this.serverRemoveRecord(records[i], i+idx);
+      } else {
+        this.serverRemoveRecord(records[i]);
+      }
+    }
+  },
+
+  serverRemoveRecord: function(record) {
+    this.removeRecord(record);
+  },
+
   addRecord: function(record, idx) {
     if (!this.members.has(record)) {
       this.members.add(record);
@@ -193,7 +221,8 @@ ManyRelationship.prototype.computeChanges = function(records) {
 
     recordsToRemove.push(member);
   });
-  this.removeRecords(recordsToRemove);
+
+  this.serverRemoveRecords(recordsToRemove);
 
   var hasManyArray = this.manyArray;
 
@@ -209,8 +238,8 @@ ManyRelationship.prototype.computeChanges = function(records) {
     if (hasManyArray.objectAt(i) === record ) {
       continue;
     }
-    this.removeRecord(record);
-    this.addRecord(record, i);
+    this.serverRemoveRecord(record);
+    this.serverAddRecord(record, i);
   }
 };
 
@@ -270,6 +299,14 @@ BelongsToRelationship.prototype.setRecord = function(newRecord) {
     this.addRecord(newRecord);
   } else if (this.inverseRecord) {
     this.removeRecord(this.inverseRecord);
+  }
+};
+
+BelongsToRelationship.prototype.serverSetRecord = function(newRecord) {
+  if (newRecord) {
+    this.serverAddRecord(newRecord);
+  } else if (this.inverseRecord) {
+    this.serverRemoveRecord(this.inverseRecord);
   }
 };
 

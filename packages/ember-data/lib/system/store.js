@@ -1899,7 +1899,7 @@ function setupRelationships(store, record, data) {
       if (value === undefined) {
         return;
       }
-      relationship.setRecord(value);
+      relationship.serverSetRecord(value);
     } else if (kind === 'hasMany' && value) {
      relationship.updateRecordsFromAdapter(value);
     }
