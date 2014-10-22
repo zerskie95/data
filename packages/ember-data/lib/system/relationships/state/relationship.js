@@ -69,10 +69,6 @@ Relationship.prototype = {
     }
   },
 
-  serverAddRecord: function( record, idx) {
-    this.addRecord(record, idx);
-  },
-
   serverRemoveRecords: function(records, idx) {
     for (var i=0; i<records.length; i++) {
       if (idx !== undefined) {
@@ -84,7 +80,31 @@ Relationship.prototype = {
   },
 
   serverRemoveRecord: function(record) {
-    this.removeRecord(record);
+    if (this.members.has(record)) {
+      this.removeRecordFromOwn(record);
+      if (this.inverseKey) {
+        this.removeRecordFromInverse(record);
+      } else {
+        if (record._implicitRelationships[this.inverseKeyForImplicit]) {
+          record._implicitRelationships[this.inverseKeyForImplicit].removeRecord(this.record);
+        }
+      }
+    }
+  },
+
+  serverAddRecord: function(record, idx) {
+    if (!this.members.has(record)) {
+      this.members.add(record);
+      this.notifyRecordRelationshipAdded(record, idx);
+      if (this.inverseKey) {
+        record._relationships[this.inverseKey].addRecord(this.record);
+      } else {
+        if (!record._implicitRelationships[this.inverseKeyForImplicit]) {
+          record._implicitRelationships[this.inverseKeyForImplicit] = new Relationship(this.store, record, this.key,  {options:{}});
+        }
+        record._implicitRelationships[this.inverseKeyForImplicit].addRecord(this.record);
+      }
+    }
   },
 
   addRecord: function(record, idx) {
@@ -99,7 +119,7 @@ Relationship.prototype = {
         }
         record._implicitRelationships[this.inverseKeyForImplicit].addRecord(this.record);
       }
-      this.record.updateRecordArrays();
+      this.record.updateRecordArraysLater();
     }
   },
 

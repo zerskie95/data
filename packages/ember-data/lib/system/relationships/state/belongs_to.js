@@ -45,6 +45,21 @@ BelongsToRelationship.prototype.addRecord = function(newRecord) {
   this._super$addRecord(newRecord);
 };
 
+BelongsToRelationship.prototype._super$serverAddRecord = Relationship.prototype.serverAddRecord;
+BelongsToRelationship.prototype.serverAddRecord = function(newRecord) {
+  if (this.members.has(newRecord)){ return;}
+  var type = this.relationshipMeta.type;
+  Ember.assert("You can only add a '" + type.typeKey + "' record to this relationship", newRecord instanceof type);
+
+  if (this.inverseRecord) {
+    this.removeRecord(this.inverseRecord);
+  }
+
+  this.inverseRecord = newRecord;
+  this._super$serverAddRecord(newRecord);
+};
+
+
 BelongsToRelationship.prototype.setRecordPromise = function(newPromise) {
   var content = newPromise.get && newPromise.get('content');
   Ember.assert("You passed in a promise that did not originate from an EmberData relationship. You can only pass promises that come from a belongsTo or hasMany relationship to the get call.", content !== undefined);
