@@ -1,12 +1,12 @@
 import { PromiseManyArray } from "ember-data/system/promise_proxies";
 import Relationship from "ember-data/system/relationships/state/relationship";
 import { OrderedSet } from "ember-data/system/map";
+import  ManyArray from "ember-data/system/record_arrays/many_array";
 
 var ManyRelationship = function(store, record, inverseKey, relationshipMeta) {
   this._super$constructor(store, record, inverseKey, relationshipMeta);
   this.belongsToType = relationshipMeta.type;
-  this.manyArray = store.recordArrayManager.createManyArray(this.belongsToType, Ember.A());
-  this.manyArray.relationship = this;
+  this.manyArray = ManyArray.create({ content:Ember.A(), store:this.store, relationship:this, type:this.belongsToType});
   this.isPolymorphic = relationshipMeta.options.polymorphic;
   this.manyArray.isPolymorphic = this.isPolymorphic;
 };
