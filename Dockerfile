@@ -9,3 +9,4 @@ WORKDIR /workspace
 USER web
 RUN npm install
 RUN npm run-script bower-install
+ADD . /workspace
