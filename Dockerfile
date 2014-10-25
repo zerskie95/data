@@ -1,6 +1,7 @@
 FROM node:0.10.32
 
 RUN npm install -g npm@1.x
+RUN npm install -g phantomjs@1.9.7
 RUN mkdir -p /workspace
 RUN adduser web --home /home/web --shell /bin/bash --disabled-password --gecos ""
 RUN chown -R web:web /workspace
