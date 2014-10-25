@@ -9,4 +9,6 @@ ADD package.json /workspace/package.json
 WORKDIR /workspace
 RUN npm install
 RUN npm run-script bower-install
+ADD package.json /workspace/package.json
+ADD bower.json /worksapce/bower.json
 ADD . /workspace
