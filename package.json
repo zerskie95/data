@@ -23,7 +23,8 @@
     "testem-beta": "testem -f config/testem-beta.json -R dot ci",
     "testem-canary": "testem -f config/testem-canary.json -R dot ci",
     "testem-stable": "testem -f config/testem-stable.json -R dot ci",
-    "bower-install": "bower install --no-interactive"
+    "bower-install": "bower install --no-interactive",
+    "dist-test": "npm run-script dist && npm test"
   },
   "devDependencies": {
     "aws-sdk": "~2.0.0-rc8",
