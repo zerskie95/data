@@ -1644,6 +1644,7 @@ function deserializeRecordId(store, data, key, relationship, id) {
   if (isNone(id) || id instanceof Model) {
     return;
   }
+  Ember.assert("A " + relationship.parentType + " record was pushed into the store with the value of " + key + " being " + Ember.inspect(id) + ", but " + key + " is a belongsTo relationship so the value must not be an array. You should probably check your data payload or serializer.", !Ember.isArray(id));
 
   var type;
 
@@ -1665,9 +1666,11 @@ function typeFor(relationship, key, data) {
 }
 
 function deserializeRecordIds(store, data, key, relationship, ids) {
-  if (!Ember.isArray(ids)) {
+  if (isNone(ids)) {
     return;
   }
+
+  Ember.assert("A " + relationship.parentType + " record was pushed into the store with the value of " + key + " being '" + Ember.inspect(ids) + "', but " + key + " is a hasMany relationship so the value must be an array. You should probably check your data payload or serializer.", Ember.isArray(ids));
   for (var i=0, l=ids.length; i<l; i++) {
     deserializeRecordId(store, ids, i, relationship, ids[i]);
   }
@@ -1869,7 +1872,9 @@ function _commit(adapter, store, operation, record) {
     return record;
   }, function(reason) {
     if (reason instanceof InvalidError) {
-      store.recordWasInvalid(record, reason.errors);
+      var errors = serializer.extractErrors(store, type, reason.errors, get(record, 'id'));
+      store.recordWasInvalid(record, errors);
+      reason = new InvalidError(errors);
     } else {
       store.recordWasError(record, reason);
     }
