@@ -5,4 +5,5 @@ RUN mkdir -p /workspace
 ADD package.json /workspace/package.json
 WORKDIR /workspace
 RUN npm install
+RUN npm run-script bower-install
 ADD . /workspace
