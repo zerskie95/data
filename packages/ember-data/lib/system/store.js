@@ -1084,6 +1084,15 @@ Store = Ember.Object.extend({
   */
   didSaveRecord: function(record, data) {
     if (data) {
+      var id = coerceId(data.id);
+      var existingRecord = this.typeMapFor(record.constructor).idToRecord[id];
+      if (existingRecord && existingRecord !== record) {
+        //TODO(Igor) what about the else case
+        if (!existingRecord.get('isLoaded')) {
+          this._copyRelationships(existingRecord, record);
+          existingRecord.unloadRecord();
+        }
+      }
       // normalize relationship IDs into records
       data = normalizeRelationships(this, record.constructor, data, record);
       setupRelationships(this, record, data);
@@ -1094,6 +1103,17 @@ Store = Ember.Object.extend({
     record.adapterDidCommit(data);
   },
 
+  _copyRelationships: function(source, target) {
+    source.eachRelationship(function(name) {
+      var inverseKey = source._relationships[name].inverseKey;
+      source._relationships[name].members.forEach(function(member) {
+        source._relationships[name].removeRecord(member);
+        if (inverseKey) {
+          member._relationships[inverseKey].addRecord(target);
+        }
+      });
+    });
+  },
   /**
     This method is called once the promise returned by an
     adapter's `createRecord`, `updateRecord` or `deleteRecord`
