@@ -4,10 +4,10 @@
     <meta charset="utf-8">
     <title>Ember Data</title>
     <link rel="stylesheet" href="/bower_components/qunit/qunit/qunit.css">
-    <script src="/bower_components/qunit/qunit/qunit.js"></script>
-    <script src="/testem.js"></script>
+    <script src="bower_components/qunit/qunit/qunit.js"></script>
+    <script src="testem.js"></script>
     <script src="qunit_configuration.js"></script>
-    <script src="/bower_components/handlebars/handlebars.js" ></script>
+    <script src="bower_components/handlebars/handlebars.js" ></script>
 
     <script type="text/javascript">
       window.loadScript = function(url) {
@@ -27,7 +27,7 @@
     <script type="text/javascript">
       // Fallback to default jQuery
       if (jQueryVersion !== 'none' && !window.jQuery) {
-        loadScript('/bower_components/jquery/jquery.js');
+        loadScript('bower_components/jquery/jquery.js');
       }
       // Close the script tag to make sure document.write happens
     </script>
@@ -46,7 +46,7 @@
       var emberChannel = QUnit.urlParams.emberchannel || "release", emberPath;
 
       if (emberChannel === "release") {
-        emberPath = "/bower_components/ember/ember.js";
+        emberPath = "bower_components/ember/ember.js";
       } else {
         emberPath = 'https://s3.amazonaws.com/builds.emberjs.com/' + emberChannel + '/ember.js';
       }
@@ -59,7 +59,7 @@
     <![endif]]-->
 
 
-    <script src="/ember-data.js"></script>
+    <script src="ember-data.js"></script>
     <script src="ember-data-setup.js"></script>
     <script src="tests.js"></script>
   </head>
