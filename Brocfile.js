@@ -176,15 +176,25 @@ configurationFiles = replace(configurationFiles, {
   }
 });
 
-var folderName = process.env.PUBLIC_WWW_FOLDER_NAME ?
-  process.env.PUBLIC_WWW_FOLDER_NAME :
-  '';
+var saucelabsRunner = pickFiles(testRunner, {
+  files: [ '**/*.html'],
+  srcDir: '/',
+  destDir: '/'
+});
 
-var testHTML = replace(testRunner, {
+testRunner = replace(testRunner, {
   files: [ 'index.html' ],
   pattern: {
     match: /{{ASSET_URL}}/g,
-    replacement: folderName
+    replacement: ''
+  }
+});
+
+var testHTML = replace(saucelabsRunner, {
+  files: [ 'index.html' ],
+  pattern: {
+    match: /{{ASSET_URL}}/g,
+    replacement: process.env.PUBLIC_WWW_FOLDER_NAME + '/'
   }
 });
 
@@ -193,15 +203,10 @@ testHTML = moveFile(testHTML, {
   destFile: '/saucelabs.html'
 });
 
-testHTML = pickFiles(testHTML, {
-  srcDir: '/',
-  files: [ 'saucelabs.html' ],
-  destDir: '/'
-});
+testFiles = merge([testFiles, testHTML], {overwrite: true});
 
 var trees = merge([
   testFiles,
-  testHTML,
   globalBuild,
   namedAMDBuild,
   testRunner,
