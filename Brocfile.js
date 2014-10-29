@@ -15,6 +15,7 @@ var version       = require('git-repo-version')(10);
 var renderTemplate = require('broccoli-render-template');
 var yuidoc = require('broccoli-yuidoc');
 var replace = require('broccoli-string-replace');
+var assetrev = require('broccoli-asset-rev');
 
 function moveFromLibAndMainJS(packageName, vendored){
   var root = vendored ? 'bower_components/' + packageName + "/packages/" + packageName + '/lib':
@@ -175,8 +176,32 @@ configurationFiles = replace(configurationFiles, {
   }
 });
 
+var folderName = process.env.PUBLIC_WWW_FOLDER_NAME ?
+  process.env.PUBLIC_WWW_FOLDER_NAME :
+  '';
+
+var testHTML = replace(testRunner, {
+  files: [ 'index.html' ],
+  pattern: {
+    match: /{{ASSET_URL}}/g,
+    replacement: folderName
+  }
+});
+
+testHTML = moveFile(testHTML, {
+  srcFile: 'index.html',
+  destFile: '/saucelabs.html'
+});
+
+testHTML = pickFiles(testHTML, {
+  srcDir: '/',
+  files: [ 'saucelabs.html' ],
+  destDir: '/'
+});
+
 var trees = merge([
   testFiles,
+  testHTML,
   globalBuild,
   namedAMDBuild,
   testRunner,
