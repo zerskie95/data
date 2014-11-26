@@ -19,8 +19,8 @@ var retrieveFromCurrentState = Ember.computed('currentState', function(key, valu
   return get(get(this, 'currentState'), key);
 }).readOnly();
 
-var _extractPivotNameCache = Object.create(null);
-var _splitOnDotCache = Object.create(null);
+var _extractPivotNameCache = Ember.create(null);
+var _splitOnDotCache = Ember.create(null);
 
 function splitOnDot(name) {
   return _splitOnDotCache[name] || (
@@ -445,6 +445,27 @@ var Model = Ember.Object.extend(Ember.Evented, {
     this._attributes = {};
     this._inFlightAttributes = {};
     this._relationships = {};
+    /*
+      implicit relationships are relationship which have not been declared but the inverse side exists on
+      another record somewhere
+      For example if there was
+      ```
+        App.Comment = DS.Model.extend({
+          name: DS.attr()
+        })
+      ```
+      but there is also
+      ```
+        App.Post = DS.Model.extend({
+          name: DS.attr(),
+          comments: DS.hasMany('comment')
+        })
+      ```
+
+      would have a implicit post relationship in order to be do things like remove ourselves from the post
+      when we are deleted
+    */
+    this._implicitRelationships = Ember.create(null);
     var model = this;
     //TODO Move into a getter for better perf
     this.constructor.eachRelationship(function(key, descriptor) {
@@ -642,6 +663,27 @@ var Model = Ember.Object.extend(Ember.Evented, {
     }, this);
   },
 
+  disconnectRelationships: function() {
+    this.eachRelationship(function(name, relationship) {
+      this._relationships[name].disconnect();
+    }, this);
+    var model = this;
+    forEach.call(Ember.keys(this._implicitRelationships), function(key) {
+      model._implicitRelationships[key].disconnect();
+    });
+  },
+
+  reconnectRelationships: function() {
+    this.eachRelationship(function(name, relationship) {
+      this._relationships[name].reconnect();
+    }, this);
+    var model = this;
+    forEach.call(Ember.keys(this._implicitRelationships), function(key) {
+      model._implicitRelationships[key].reconnect();
+    });
+  },
+
+
   /**
     @method updateRecordArrays
     @private
@@ -718,6 +760,20 @@ var Model = Ember.Object.extend(Ember.Evented, {
   },
 
   /**
+    @method _notifyProperties
+    @private
+  */
+  _notifyProperties: function(keys) {
+    Ember.beginPropertyChanges();
+    var key;
+    for (var i = 0, length = keys.length; i < length; i++){
+      key = keys[i];
+      this.notifyPropertyChange(key);
+    }
+    Ember.endPropertyChanges();
+  },
+
+  /**
     Returns an object, whose keys are changed properties, and value is
     an [oldProp, newProp] array.
 
@@ -782,7 +838,7 @@ var Model = Ember.Object.extend(Ember.Evented, {
 
     if (!data) { return; }
 
-    this.notifyPropertyChange('data');
+    this._notifyProperties(Ember.keys(data));
   },
 
   /**
@@ -815,15 +871,17 @@ var Model = Ember.Object.extend(Ember.Evented, {
       the existing data, not replace it.
   */
   setupData: function(data, partial) {
+    Ember.assert("Expected an object as `data` in `setupData`", Ember.typeOf(data) === 'object');
+
     if (partial) {
       Ember.merge(this._data, data);
     } else {
       this._data = data;
     }
 
-    if (data) { this.pushedData(); }
+    this.pushedData();
 
-    this.notifyPropertyChange('data');
+    this._notifyProperties(Ember.keys(data));
   },
 
   materializeId: function(id) {
@@ -863,13 +921,25 @@ var Model = Ember.Object.extend(Ember.Evented, {
       set(this, 'isError', false);
     }
 
+    //Eventually rollback will always work for relationships
+    //For now we support it only out of deleted state, because we
+    //have an explicit way of knowing when the server acked the relationship change
+    if (get(this, 'isDeleted')) {
+      this.reconnectRelationships();
+    }
+
+    if (get(this, 'isNew')) {
+      this.clearRelationships();
+    }
+
     if (!get(this, 'isValid')) {
       this._inFlightAttributes = {};
     }
 
     this.send('rolledBack');
 
-    this.notifyPropertyChange('data');
+    this._notifyProperties(Ember.keys(this._data));
+
   },
 
   toStringExtension: function() {
@@ -878,7 +948,7 @@ var Model = Ember.Object.extend(Ember.Evented, {
 
   /**
     Save the record and persist any changes to the record to an
-    extenal source via the adapter.
+    external source via the adapter.
 
     Example
 
@@ -920,7 +990,9 @@ var Model = Ember.Object.extend(Ember.Evented, {
     App.ModelViewRoute = Ember.Route.extend({
       actions: {
         reload: function() {
-          this.controller.get('model').reload();
+          this.controller.get('model').reload().then(function(model) {
+            // do something with the reloaded model
+          });
         }
       }
     });
@@ -945,7 +1017,9 @@ var Model = Ember.Object.extend(Ember.Evented, {
     }, function(reason) {
       record.set('isError', true);
       throw reason;
-    }, "DS: Model#reload complete, update flags");
+    }, "DS: Model#reload complete, update flags")['finally'](function () {
+      record.updateRecordArrays();
+    });
 
     return PromiseObject.create({
       promise: promise
@@ -1001,15 +1075,32 @@ var Model = Ember.Object.extend(Ember.Evented, {
 
     @method trigger
     @private
-    @param name
+    @param {String} name
   */
-  trigger: function(name) {
-    Ember.tryInvoke(this, name, [].slice.call(arguments, 1));
+  trigger: function() {
+    var length = arguments.length;
+    var args = new Array(length - 1);
+    var name = arguments[0];
+
+    for (var i = 1; i < length; i++ ){
+      args[i - 1] = arguments[i];
+    }
+
+    Ember.tryInvoke(this, name, args);
     this._super.apply(this, arguments);
   },
 
   triggerLater: function() {
-    if (this._deferredTriggers.push(arguments) !== 1) { return; }
+    var length = arguments.length;
+    var args = new Array(length);
+
+    for (var i = 0; i < length; i++ ){
+      args[i] = arguments[i];
+    }
+
+    if (this._deferredTriggers.push(args) !== 1) {
+      return;
+    }
     Ember.run.schedule('actions', this, '_triggerDeferredTriggers');
   },
 

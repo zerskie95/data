@@ -1,4 +1,4 @@
-var get = Ember.get, set = Ember.set;
+var get = Ember.get;
 var Post, post, Comment, comment, env;
 
 module("integration/serializer/json - JSONSerializer", {
@@ -66,6 +66,20 @@ test("serializeBelongsTo", function() {
 });
 
 test("serializeBelongsTo with null", function() {
+  comment = env.store.createRecord(Comment, { body: "Omakase is delicious", post: null});
+  var json = {};
+
+  env.serializer.serializeBelongsTo(comment, json, {key: "post", options: {}});
+
+  deepEqual(json, {
+    post: null
+  }, "Can set a belongsTo to a null value");
+});
+
+test("async serializeBelongsTo with null", function() {
+  Comment.reopen({
+    post: DS.belongsTo('post', {async:true})
+   });
   comment = env.store.createRecord(Comment, { body: "Omakase is delicious", post: null});
   var json = {};
 

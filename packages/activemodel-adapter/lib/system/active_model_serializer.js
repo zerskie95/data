@@ -16,7 +16,7 @@ var get = Ember.get,
   It has been designed to work out of the box with the
   [active_model_serializers](http://github.com/rails-api/active_model_serializers)
   Ruby gem. This Serializer expects specific settings using ActiveModel::Serializers,
-  `embed :ids, include: true` which sideloads the records.
+  `embed :ids, embed_in_root: true` which sideloads the records.
 
   This serializer extends the DS.RESTSerializer by making consistent
   use of the camelization, decamelization and pluralization methods to
@@ -156,7 +156,7 @@ var ActiveModelSerializer = RESTSerializer.extend({
     @method serializePolymorphicType
     @param {DS.Model} record
     @param {Object} json
-    @param relationship
+    @param {Object} relationship
   */
   serializePolymorphicType: function(record, json, relationship) {
     var key = relationship.key;

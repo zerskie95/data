@@ -1,4 +1,7 @@
 import Model from "ember-data/system/model/model";
+import {
+  Map
+} from "ember-data/system/map";
 
 /**
   @module ember-data
@@ -44,7 +47,7 @@ Model.reopenClass({
     @readOnly
   */
   attributes: Ember.computed(function() {
-    var map = Ember.Map.create();
+    var map = Map.create();
 
     this.eachComputedProperty(function(name, meta) {
       if (meta.isAttribute) {
@@ -90,7 +93,7 @@ Model.reopenClass({
     @readOnly
   */
   transformedAttributes: Ember.computed(function() {
-    var map = Ember.Map.create();
+    var map = Map.create();
 
     this.eachAttribute(function(key, meta) {
       if (meta.type) {
@@ -143,7 +146,7 @@ Model.reopenClass({
     @static
   */
   eachAttribute: function(callback, binding) {
-    get(this, 'attributes').forEach(function(name, meta) {
+    get(this, 'attributes').forEach(function(meta, name) {
       callback.call(binding, name, meta);
     }, binding);
   },
@@ -191,7 +194,7 @@ Model.reopenClass({
     @static
   */
   eachTransformedAttribute: function(callback, binding) {
-    get(this, 'transformedAttributes').forEach(function(name, type) {
+    get(this, 'transformedAttributes').forEach(function(type, name) {
       callback.call(binding, name, type);
     });
   }
@@ -273,7 +276,7 @@ export default function attr(type, options) {
     options: options
   };
 
-  return Ember.computed('data', function(key, value) {
+  return Ember.computed(function(key, value) {
     if (arguments.length > 1) {
       Ember.assert("You may not set `id` as an attribute on your model. Please remove any lines that look like: `id: DS.attr('<type>')` from " + this.constructor.toString(), key !== 'id');
       var oldValue = getValue(this, key);

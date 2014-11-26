@@ -1,5 +1,4 @@
-var get = Ember.get, set = Ember.set;
-var indexOf = Ember.EnumerableUtils.indexOf;
+var get = Ember.get;
 
 var Person, array;
 
@@ -72,6 +71,47 @@ test("a loaded record is removed from a record array when it is deleted", functi
   }));
 });
 
+test("a loaded record is removed from a record array when it is deleted even if the belongsTo side isn't defined", function() {
+  var Tag = DS.Model.extend({
+    people: DS.hasMany('person')
+  });
+
+  var env = setupStore({ tag: Tag, person: Person }),
+      store = env.store;
+
+  var scumbag = store.push('person', {id:1, name: 'Scumbag Tom'});
+  var tag = store.push('tag', { id: 1, people:[1] });
+
+  scumbag.deleteRecord();
+
+  equal(tag.get('people.length'), 0, "record is removed from the record array");
+});
+
+test("a loaded record is removed both from the record array and from the belongs to, even if the belongsTo side isn't defined", function() {
+  var Tag = DS.Model.extend({
+    people: DS.hasMany('person')
+  });
+
+  var Tool = DS.Model.extend({
+    person: DS.belongsTo('person')
+  });
+
+  var env = setupStore({ tag: Tag, person: Person, tool: Tool }),
+      store = env.store;
+
+  var scumbag = store.push('person', {id:1, name: 'Scumbag Tom'});
+  var tag = store.push('tag', { id: 1, people:[1] });
+  var tool = store.push('tool', {id: 1, person:1});
+
+  equal(tag.get('people.length'), 1, "record is in the record array");
+  equal(tool.get('person'), scumbag, "the tool belongs to the record");
+
+  scumbag.deleteRecord();
+
+  equal(tag.get('people.length'), 0, "record is removed from the record array");
+  equal(tool.get('person'), null, "the tool is now orphan");
+});
+
 // GitHub Issue #168
 test("a newly created record is removed from a record array when it is deleted", function() {
   var store = createStore(),
@@ -125,14 +165,6 @@ test("a record array should be able to be enumerated in any order", function() {
   equal(get(recordArray.objectAt(1), 'id'), 2, "should retrieve correct record at index 1");
   equal(get(recordArray.objectAt(0), 'id'), 1, "should retrieve correct record at index 0");
 });
-
-var shouldContain = function(array, item) {
-  ok(indexOf(array, item) !== -1, "array should contain "+item.get('name'));
-};
-
-var shouldNotContain = function(array, item) {
-  ok(indexOf(array, item) === -1, "array should not contain "+item.get('name'));
-};
 
 test("an AdapterPopulatedRecordArray knows if it's loaded or not", function() {
   var env = setupStore({ person: Person }),

@@ -1,4 +1,5 @@
 var Promise = Ember.RSVP.Promise;
+var get = Ember.get;
 
 /**
   A `PromiseArray` is an object that acts like both an `Ember.Array`
@@ -74,9 +75,58 @@ var promiseArray = function(promise, label) {
   });
 };
 
+/**
+  A PromiseManyArray is a PromiseArray that also proxies certain method calls
+  to the underlying manyArray.
+  Right now we proxy:
+    `reload()`
+    `createRecord()`
+    `on()`
+    `one()`
+    `trigger()`
+    `off()`
+    `has()`
+*/
+
+function proxyToContent(method) {
+  return function() {
+    var content = get(this, 'content');
+    return content[method].apply(content, arguments);
+  };
+}
+
+var PromiseManyArray = PromiseArray.extend({
+  reload: function() {
+    //I don't think this should ever happen right now, but worth guarding if we refactor the async relationships
+    Ember.assert('You are trying to reload an async manyArray before it has been created', get(this, 'content'));
+    return get(this, 'content').reload();
+  },
+
+  createRecord: proxyToContent('createRecord'),
+
+  on: proxyToContent('on'),
+
+  one: proxyToContent('one'),
+
+  trigger: proxyToContent('trigger'),
+
+  off: proxyToContent('off'),
+
+  has: proxyToContent('has')
+});
+
+var promiseManyArray = function(promise, label) {
+  return PromiseManyArray.create({
+    promise: Promise.resolve(promise, label)
+  });
+};
+
+
 export {
   PromiseArray,
   PromiseObject,
+  PromiseManyArray,
   promiseArray,
-  promiseObject
+  promiseObject,
+  promiseManyArray
 };

@@ -2,6 +2,10 @@ var get = Ember.get;
 var isEmpty = Ember.isEmpty;
 var map = Ember.EnumerableUtils.map;
 
+import {
+  MapWithDefault
+} from "ember-data/system/map";
+
 /**
 @module ember-data
 */
@@ -13,7 +17,7 @@ var map = Ember.EnumerableUtils.map;
   `DS.Errors`. This can be used to display validation error
   messages returned from the server when a `record.save()` rejects.
   This works automatically with `DS.ActiveModelAdapter`, but you
-  can implement [ajaxError](api/data/classes/DS.RESTAdapter.html#method_ajaxError)
+  can implement [ajaxError](/api/data/classes/DS.RESTAdapter.html#method_ajaxError)
   in other adapters as well.
 
   For Example, if you had an `User` model that looked like this:
@@ -98,7 +102,7 @@ export default Ember.Object.extend(Ember.Enumerable, Ember.Evented, {
   */
   errorsByAttributeName: Ember.reduceComputed("content", {
     initialValue: function() {
-      return Ember.MapWithDefault.create({
+      return MapWithDefault.create({
         defaultValue: function() {
           return Ember.A();
         }

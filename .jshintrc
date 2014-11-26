@@ -32,13 +32,13 @@
         "invokeAsync",
         "jQuery",
         "expectAssertion",
-        "expectDeprecation"
-
+        "expectDeprecation",
+        "warns",
+        "noWarns",
+        "throws"
     ],
-
     "node" : false,
     "browser" : true,
-    "es3": true,
     "boss" : true,
     "curly": false,
     "debug": false,

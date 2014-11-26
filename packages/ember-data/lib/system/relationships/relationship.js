@@ -1,22 +1,28 @@
 import {
-  PromiseArray,
+  PromiseManyArray,
   PromiseObject
 } from "ember-data/system/promise_proxies";
+import {
+  OrderedSet
+} from "ember-data/system/map";
 
 var Relationship = function(store, record, inverseKey, relationshipMeta) {
-  this.members = new Ember.OrderedSet();
+  this.members = new OrderedSet();
   this.store = store;
   this.key = relationshipMeta.key;
   this.inverseKey = inverseKey;
   this.record = record;
-  this.key = relationshipMeta.key;
   this.isAsync = relationshipMeta.options.async;
   this.relationshipMeta = relationshipMeta;
+  //This probably breaks for polymorphic relationship in complex scenarios, due to
+  //multiple possible typeKeys
+  this.inverseKeyForImplicit = this.store.modelFor(this.record.constructor).typeKey + this.key;
+  //Cached promise when fetching the relationship from a link
+  this.linkPromise = null;
 };
 
 Relationship.prototype = {
   constructor: Relationship,
-  hasFetchedLink: false,
 
   destroy: Ember.K,
 
@@ -26,23 +32,38 @@ Relationship.prototype = {
     }, this);
   },
 
+  disconnect: function(){
+    this.members.forEach(function(member) {
+      this.removeRecordFromInverse(member);
+    }, this);
+  },
+
+  reconnect: function(){
+    this.members.forEach(function(member) {
+      this.addRecordToInverse(member);
+    }, this);
+  },
+
   removeRecords: function(records){
-    var that = this;
-    records.forEach(function(record){
-      that.removeRecord(record);
-    });
+    var length = Ember.get(records, 'length');
+    var record;
+    for (var i = 0; i < length; i++){
+      record = records[i];
+      this.removeRecord(record);
+    }
   },
 
   addRecords: function(records, idx){
-    var that = this;
-    records.forEach(function(record){
-      that.addRecord(record, idx);
+    var length = Ember.get(records, 'length');
+    var record;
+    for (var i = 0; i < length; i++){
+      record = records[i];
+      this.addRecord(record, idx);
       if (idx !== undefined) {
         idx++;
       }
-    });
+    }
   },
-
 
   addRecord: function(record, idx) {
     if (!this.members.has(record)) {
@@ -50,6 +71,11 @@ Relationship.prototype = {
       this.notifyRecordRelationshipAdded(record, idx);
       if (this.inverseKey) {
         record._relationships[this.inverseKey].addRecord(this.record);
+      } else {
+        if (!record._implicitRelationships[this.inverseKeyForImplicit]) {
+          record._implicitRelationships[this.inverseKeyForImplicit] = new Relationship(this.store, record, this.key,  {options:{}});
+        }
+        record._implicitRelationships[this.inverseKeyForImplicit].addRecord(this.record);
       }
       this.record.updateRecordArrays();
     }
@@ -57,31 +83,65 @@ Relationship.prototype = {
 
   removeRecord: function(record) {
     if (this.members.has(record)) {
-      this.members.remove(record);
-      this.notifyRecordRelationshipRemoved(record);
+      this.removeRecordFromOwn(record);
       if (this.inverseKey) {
-        var inverseRelationship = record._relationships[this.inverseKey];
-        //Need to check for existence, as the record might unloading at the moment
-        if (inverseRelationship) {
-          inverseRelationship.removeRecord(this.record);
+        this.removeRecordFromInverse(record);
+      } else {
+        if (record._implicitRelationships[this.inverseKeyForImplicit]) {
+          record._implicitRelationships[this.inverseKeyForImplicit].removeRecord(this.record);
         }
       }
-      this.record.updateRecordArrays();
     }
   },
 
+  addRecordToInverse: function(record) {
+    if (this.inverseKey) {
+      record._relationships[this.inverseKey].addRecord(this.record);
+    }
+  },
+
+  removeRecordFromInverse: function(record) {
+    var inverseRelationship = record._relationships[this.inverseKey];
+    //Need to check for existence, as the record might unloading at the moment
+    if (inverseRelationship) {
+      inverseRelationship.removeRecordFromOwn(this.record);
+    }
+  },
+
+  removeRecordFromOwn: function(record) {
+    this.members.delete(record);
+    this.notifyRecordRelationshipRemoved(record);
+    this.record.updateRecordArrays();
+  },
+
   updateLink: function(link) {
+    Ember.assert("You have pushed a record of type '" + this.record.constructor.typeKey + "' with '" + this.key + "' as a link, but the value of that link is not a string.", typeof link === 'string' || link === null);
     if (link !== this.link) {
       this.link = link;
-      this.hasFetchedLink = false;
+      this.linkPromise = null;
       this.record.notifyPropertyChange(this.key);
+    }
+  },
+
+  findLink: function() {
+    if (this.linkPromise) {
+      return this.linkPromise;
+    } else {
+      var promise = this.fetchLink();
+      this.linkPromise = promise;
+      return promise.then(function(result) {
+        return result;
+      });
     }
   },
 
   updateRecordsFromAdapter: function(records) {
     //TODO Once we have adapter support, we need to handle updated and canonical changes
     this.computeChanges(records);
-  }
+  },
+
+  notifyRecordRelationshipAdded: Ember.K,
+  notifyRecordRelationshipRemoved: Ember.K
 };
 
 var ManyRelationship = function(store, record, inverseKey, relationshipMeta) {
@@ -93,7 +153,7 @@ var ManyRelationship = function(store, record, inverseKey, relationshipMeta) {
   this.manyArray.isPolymorphic = this.isPolymorphic;
 };
 
-ManyRelationship.prototype = Object.create(Relationship.prototype);
+ManyRelationship.prototype = Ember.create(Relationship.prototype);
 ManyRelationship.prototype.constructor = ManyRelationship;
 ManyRelationship.prototype._super$constructor = Relationship;
 
@@ -110,69 +170,104 @@ ManyRelationship.prototype.notifyRecordRelationshipRemoved = function(record) {
   this.record.notifyHasManyRemoved(this.key, record);
 };
 
+ManyRelationship.prototype.reload = function() {
+  var self = this;
+  if (this.link) {
+    return this.fetchLink();
+  } else {
+    return this.store.scheduleFetchMany(this.manyArray.toArray()).then(function() {
+      //Goes away after the manyArray refactor
+      self.manyArray.set('isLoaded', true);
+      return self.manyArray;
+    });
+  }
+};
+
 ManyRelationship.prototype.computeChanges = function(records) {
   var members = this.members;
+  var recordsToRemove = [];
+  var length;
+  var record;
+  var i;
 
   records = setForArray(records);
 
   members.forEach(function(member) {
     if (records.has(member)) return;
 
-    this.removeRecord(member);
-  }, this);
+    recordsToRemove.push(member);
+  });
+  this.removeRecords(recordsToRemove);
 
   var hasManyArray = this.manyArray;
 
-  records.forEach(function(record, index) {
+  // Using records.toArray() since currently using
+  // removeRecord can modify length, messing stuff up
+  // forEach since it directly looks at "length" each
+  // iteration
+  records = records.toArray();
+  length = records.length;
+  for (i = 0; i < length; i++){
+    record = records[i];
     //Need to preserve the order of incoming records
-    if (hasManyArray.objectAt(index) === record ) return;
-
+    if (hasManyArray.objectAt(i) === record ) {
+      continue;
+    }
     this.removeRecord(record);
-    this.addRecord(record, index);
-  }, this);
+    this.addRecord(record, i);
+  }
 };
 
+ManyRelationship.prototype.fetchLink = function() {
+  var self = this;
+  return this.store.findHasMany(this.record, this.link, this.relationshipMeta).then(function(records){
+    self.updateRecordsFromAdapter(records);
+    return self.manyArray;
+  });
+};
+
+ManyRelationship.prototype.findRecords = function() {
+  var manyArray = this.manyArray;
+  return this.store.findMany(manyArray.toArray()).then(function(){
+    //Goes away after the manyArray refactor
+    manyArray.set('isLoaded', true);
+    return manyArray;
+  });
+};
 
 ManyRelationship.prototype.getRecords = function() {
   if (this.isAsync) {
     var self = this;
     var promise;
-    if (this.link && !this.hasFetchedLink) {
-      promise = this.store.findHasMany(this.record, this.link, this.relationshipMeta).then(function(records){
-        self.updateRecordsFromAdapter(records);
-        self.hasFetchedLink = true;
-        //TODO(Igor) try to abstract the isLoaded part
-        self.manyArray.set('isLoaded', true);
-        return self.manyArray;
+    if (this.link) {
+      promise = this.findLink().then(function() {
+        return self.findRecords();
       });
     } else {
-      var manyArray = this.manyArray;
-      promise = this.store.findMany(manyArray.toArray()).then(function(){
-        self.manyArray.set('isLoaded', true);
-        return manyArray;
-      });
+      promise = this.findRecords();
     }
-    return PromiseArray.create({
+    return PromiseManyArray.create({
+      content: this.manyArray,
       promise: promise
     });
   } else {
       Ember.assert("You looked up the '" + this.key + "' relationship on a '" + this.record.constructor.typeKey + "' with id " + this.record.get('id') +  " but some of the associated records were not loaded. Either make sure they are all loaded together with the parent record, or specify that the relationship is async (`DS.hasMany({ async: true })`)", this.manyArray.isEvery('isEmpty', false));
 
-    this.manyArray.set('isLoaded', true);
+    if (!this.manyArray.get('isDestroyed')) {
+      this.manyArray.set('isLoaded', true);
+    }
     return this.manyArray;
  }
 };
 
 var BelongsToRelationship = function(store, record, inverseKey, relationshipMeta) {
   this._super$constructor(store, record, inverseKey, relationshipMeta);
-  this.members.add(record);
   this.record = record;
   this.key = relationshipMeta.key;
-  this.inverseKey = inverseKey;
   this.inverseRecord = null;
 };
 
-BelongsToRelationship.prototype = Object.create(Relationship.prototype);
+BelongsToRelationship.prototype = Ember.create(Relationship.prototype);
 BelongsToRelationship.prototype.constructor = BelongsToRelationship;
 BelongsToRelationship.prototype._super$constructor = Relationship;
 
@@ -190,12 +285,18 @@ BelongsToRelationship.prototype.addRecord = function(newRecord) {
   var type = this.relationshipMeta.type;
   Ember.assert("You can only add a '" + type.typeKey + "' record to this relationship", newRecord instanceof type);
 
-  if (this.inverseRecord && this.inverseKey) {
+  if (this.inverseRecord) {
     this.removeRecord(this.inverseRecord);
   }
 
   this.inverseRecord = newRecord;
   this._super$addRecord(newRecord);
+};
+
+BelongsToRelationship.prototype.setRecordPromise = function(newPromise) {
+  var content = newPromise.get && newPromise.get('content');
+  Ember.assert("You passed in a promise that did not originate from an EmberData relationship. You can only pass promises that come from a belongsTo or hasMany relationship to the get call.", content !== undefined);
+  this.setRecord(content);
 };
 
 BelongsToRelationship.prototype.notifyRecordRelationshipAdded = function(newRecord) {
@@ -206,36 +307,46 @@ BelongsToRelationship.prototype.notifyRecordRelationshipRemoved = function(recor
   this.record.notifyBelongsToRemoved(this.key, this);
 };
 
-BelongsToRelationship.prototype._super$removeRecord = Relationship.prototype.removeRecord;
-BelongsToRelationship.prototype.removeRecord = function(record) {
-  if (!this.members.has(record)){ return;}
-  this._super$removeRecord(record);
+BelongsToRelationship.prototype._super$removeRecordFromOwn = Relationship.prototype.removeRecordFromOwn;
+BelongsToRelationship.prototype.removeRecordFromOwn = function(record) {
+  if (!this.members.has(record)) { return; }
   this.inverseRecord = null;
+  this._super$removeRecordFromOwn(record);
 };
 
-BelongsToRelationship.prototype.currentOtherSideFor = function() {
-  return this.inverseRecord;
+BelongsToRelationship.prototype.findRecord = function() {
+  if (this.inverseRecord) {
+    return this.store._findByRecord(this.inverseRecord);
+  } else {
+    return Ember.RSVP.Promise.resolve(null);
+  }
+};
+
+BelongsToRelationship.prototype.fetchLink = function() {
+  var self = this;
+  return this.store.findBelongsTo(this.record, this.link, this.relationshipMeta).then(function(record){
+    if (record) {
+      self.addRecord(record);
+    }
+    return record;
+  });
 };
 
 BelongsToRelationship.prototype.getRecord = function() {
   if (this.isAsync) {
     var promise;
-
-    if (this.link && !this.hasFetchedLink){
+    if (this.link){
       var self = this;
-      promise = this.store.findBelongsTo(this.record, this.link, this.relationshipMeta).then(function(record){
-        self.addRecord(record);
-        self.hasFetchedLink = true;
-        return record;
+      promise = this.findLink().then(function() {
+        return self.findRecord();
       });
-    } else if (this.inverseRecord) {
-      promise = this.store._findByRecord(this.inverseRecord);
     } else {
-      promise = Ember.RSVP.Promise.resolve(null);
+      promise = this.findRecord();
     }
 
     return PromiseObject.create({
-      promise: promise
+      promise: promise,
+      content: this.inverseRecord
     });
   } else {
     Ember.assert("You looked up the '" + this.key + "' relationship on a '" + this.record.constructor.typeKey + "' with id " + this.record.get('id') +  " but some of the associated records were not loaded. Either make sure they are all loaded together with the parent record, or specify that the relationship is async (`DS.belongsTo({ async: true })`)", this.inverseRecord === null || !this.inverseRecord.get('isEmpty'));
@@ -244,7 +355,7 @@ BelongsToRelationship.prototype.getRecord = function() {
 };
 
 function setForArray(array) {
-  var set = new Ember.OrderedSet();
+  var set = new OrderedSet();
 
   if (array) {
     for (var i=0, l=array.length; i<l; i++) {

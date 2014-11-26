@@ -54,7 +54,7 @@ function coerceId(id) {
   @namespace DS
   @extends DS.JSONSerializer
 */
-export default JSONSerializer.extend({
+var RESTSerializer = JSONSerializer.extend({
   /**
     If you want to do normalizations specific to some part of the payload, you
     can specify those under `normalizeHash`.
@@ -267,9 +267,18 @@ export default JSONSerializer.extend({
 
     for (var prop in payload) {
       var typeName  = this.typeForRoot(prop);
+
+      if (!store.modelFactoryFor(typeName)){
+        Ember.warn(this.warnMessageNoModelForKey(prop, typeName), false);
+        continue;
+      }
       var type = store.modelFor(typeName);
       var isPrimary = type.typeKey === primaryTypeName;
       var value = payload[prop];
+
+      if (value === null) {
+        continue;
+      }
 
       // legacy support for singular resources
       if (isPrimary && Ember.typeOf(value) !== "array" ) {
@@ -420,6 +429,10 @@ export default JSONSerializer.extend({
       }
 
       var typeName = this.typeForRoot(typeKey);
+      if (!store.modelFactoryFor(typeName)) {
+        Ember.warn(this.warnMessageNoModelForKey(prop, typeName), false);
+        continue;
+      }
       var type = store.modelFor(typeName);
       var typeSerializer = store.serializerFor(type);
       var isPrimary = (!forcedSecondary && (type.typeKey === primaryTypeName));
@@ -475,6 +488,10 @@ export default JSONSerializer.extend({
 
     for (var prop in payload) {
       var typeName = this.typeForRoot(prop);
+      if (!store.modelFactoryFor(typeName, prop)){
+        Ember.warn(this.warnMessageNoModelForKey(prop, typeName), false);
+        continue;
+      }
       var type = store.modelFor(typeName);
       var typeSerializer = store.serializerFor(type);
 
@@ -675,8 +692,9 @@ export default JSONSerializer.extend({
     ```
 
     @method serialize
-    @param record
-    @param options
+    @param {subclass of DS.Model} record
+    @param {Object} options
+    @return {Object} json
   */
   serialize: function(record, options) {
     return this._super.apply(this, arguments);
@@ -729,3 +747,13 @@ export default JSONSerializer.extend({
     }
   }
 });
+
+Ember.runInDebug(function(){
+  RESTSerializer.reopen({
+    warnMessageNoModelForKey: function(prop, typeKey){
+      return 'Encountered "' + prop + '" in payload, but no model was found for model name "' + typeKey + '" (resolved model name using ' + this.constructor.toString() + '.typeForRoot("' + prop + '"))';
+    }
+  });
+});
+
+export default RESTSerializer;

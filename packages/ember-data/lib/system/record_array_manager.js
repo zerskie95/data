@@ -8,8 +8,13 @@ import {
   AdapterPopulatedRecordArray,
   ManyArray
 } from "ember-data/system/record_arrays";
+import {
+  MapWithDefault,
+  OrderedSet
+} from "ember-data/system/map";
 var get = Ember.get;
 var forEach = Ember.EnumerableUtils.forEach;
+var indexOf = Ember.EnumerableUtils.indexOf;
 
 /**
   @class RecordArrayManager
@@ -19,7 +24,7 @@ var forEach = Ember.EnumerableUtils.forEach;
 */
 export default Ember.Object.extend({
   init: function() {
-    this.filteredRecordArrays = Ember.MapWithDefault.create({
+    this.filteredRecordArrays = MapWithDefault.create({
       defaultValue: function() { return []; }
     });
 
@@ -34,7 +39,7 @@ export default Ember.Object.extend({
   },
 
   recordArraysForRecord: function(record) {
-    record._recordArrays = record._recordArrays || Ember.OrderedSet.create();
+    record._recordArrays = record._recordArrays || OrderedSet.create();
     return record._recordArrays;
   },
 
@@ -67,9 +72,11 @@ export default Ember.Object.extend({
 
     if (!recordArrays) { return; }
 
-    forEach(recordArrays, function(array) {
+    recordArrays.forEach(function(array){
       array.removeRecord(record);
     });
+
+    record._recordArrays = null;
   },
 
   _recordWasChanged: function (record) {
@@ -121,7 +128,7 @@ export default Ember.Object.extend({
         recordArrays.add(array);
       }
     } else if (!shouldBeInArray) {
-      recordArrays.remove(array);
+      recordArrays.delete(array);
       array.removeRecord(record);
     }
   },
@@ -134,9 +141,9 @@ export default Ember.Object.extend({
     method is invoked when the filter is created in th first place.
 
     @method updateFilter
-    @param array
-    @param type
-    @param filter
+    @param {Array} array
+    @param {String} type
+    @param {Function} filter
   */
   updateFilter: function(array, type, filter) {
     var typeMap = this.store.typeMapFor(type);
@@ -258,6 +265,19 @@ export default Ember.Object.extend({
     recordArrays.push(array);
 
     this.updateFilter(array, type, filter);
+  },
+
+  /**
+    Unregister a FilteredRecordArray.
+    So manager will not update this array.
+
+    @method unregisterFilteredRecordArray
+    @param {DS.RecordArray} array
+  */
+  unregisterFilteredRecordArray: function(array) {
+    var recordArrays = this.filteredRecordArrays.get(array.type);
+    var index = indexOf(recordArrays, array);
+    recordArrays.splice(index, 1);
   },
 
   // Internally, we maintain a map of all unloaded IDs requested by
