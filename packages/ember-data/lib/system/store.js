@@ -1710,10 +1710,12 @@ Store = Service.extend({
   pushMany: function(type, datas) {
     var length = datas.length;
     var result = new Array(length);
-
-    for (var i = 0; i < length; i++) {
-      result[i] = this.push(type, datas[i]);
-    }
+    var store = this;
+    this._backburner.join(function() {
+      for (var i = 0; i < length; i++) {
+        result[i] = store.push(type, datas[i]);
+      }
+    });
 
     return result;
   },
