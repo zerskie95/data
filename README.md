@@ -29,13 +29,12 @@ The latest passing build from the "master" branch is available on
 Similarly, the latest passing build from the "beta" branch can be found
 on [http://emberjs.com/builds/#/beta](http://emberjs.com/builds/#/beta)
 
-Or build ember-data.js yourself. Clone the repository and run `npm run dist`
+Or build ember-data.js yourself. Clone the repository and run `npm run build:production`
 after [setup](#setup). You'll find ember-data.js in the `dist` directory.
 
 #### Internet Explorer 8
 
-If you need to support Internet Explorer, you will need to use es5-shim.js and
-es5-sham.js from [es5-shim](https://github.com/es-shims/es5-shim).
+Internet Explorer 8 support requires Ember 1.8.1 (which provides a polyfill for `Object.create`).
 
 ### Instantiating the Store
 
@@ -54,12 +53,12 @@ controllers in your app.
 First thing's first: tell Ember Data about the models in your
 application. For example, imagine we're writing a blog reader app.
 Here's what your model definition would look like if you're using
-globals (that is, not something like Ember App Kit or ember-cli):
+globals (that is, not something like  or ember-cli):
 
 ```js
-var attr = DS.attr,
-    hasMany = DS.hasMany,
-    belongsTo = DS.belongsTo;
+var attr = DS.attr;
+var hasMany = DS.hasMany;
+var belongsTo = DS.belongsTo;
 
 App.BlogPost = DS.Model.extend({
   title: attr(),
@@ -76,13 +75,13 @@ App.Comment = DS.Model.extend({
 });
 ```
 
-If you're using ES6 modules (via Ember App Kit or ember-cli), your
+If you're using ES6 modules (via ember-cli), your
 models would look like this:
 
 ```js
 // app/models/blog-post.js
-var attr = DS.attr,
-    hasMany = DS.hasMany;
+var attr = DS.attr;
+var hasMany = DS.hasMany;
 
 export default DS.Model.extend({
   title: attr(),
@@ -92,8 +91,8 @@ export default DS.Model.extend({
 });
 
 // app/models/comment.js
-var attr = DS.attr,
-    belongsTo = DS.belongsTo;
+var attr = DS.attr;
+var belongsTo = DS.belongsTo;
 
 export default DS.Model.extend({
   body: attr(),
@@ -164,13 +163,23 @@ For details on anticipated changes before the 1.0 release, see the blog
 post [The Road to Ember Data
 1.0](http://emberjs.com/blog/2014/03/18/the-road-to-ember-data-1-0.html).
 
+# Building Ember Data
+
+1. Ensure that [Node.js](http://nodejs.org/) is installed.
+2. Run `npm install` to ensure the required dependencies are installed.
+3. Run `npm run build:production` to build Ember Data. The builds will be placed in the `dist/` directory.
+
+# Contribution
+
+See [CONTRIBUTING.md](https://github.com/emberjs/data/blob/master/CONTRIBUTING.md)
+
 ## How to Run Unit Tests
 
 ### Setup
 
 1. Install Node.js from http://nodejs.org or your favorite package manager.
 
-2. Install broccoli and bower. `npm install -g ember-cli bower`
+2. Install Ember CLI and bower. `npm install -g ember-cli bower`
 
 3. Run `npm install` inside the project root to install the JS dependencies.
 

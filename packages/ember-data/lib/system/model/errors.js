@@ -43,32 +43,39 @@ import {
 
   ```javascript
   {
-    "errors": {
-      "username": ["This username is already taken!"],
-      "email": ["Doesn't look like a valid email."]
-    }
+    "username": ["This username is already taken!"],
+    "email": ["Doesn't look like a valid email."]
   }
   ```
 
   Errors can be displayed to the user by accessing their property name
-  or using the `messages` property to get an array of all errors.
+  to get an array of all the error objects for that property. Each
+  error object is a JavaScript object with two keys:
+
+  - `message` A string containing the error message from the backend
+  - `attribute` The name of the property associated with this error message
 
   ```handlebars
-  {{#each errors.messages}}
-    <div class="error">
-      {{message}}
-    </div>
-  {{/each}}
-
   <label>Username: {{input value=username}} </label>
-  {{#each errors.username}}
+  {{#each model.errors.username as |error|}}
     <div class="error">
-      {{message}}
+      {{error.message}}
     </div>
   {{/each}}
 
   <label>Email: {{input value=email}} </label>
-  {{#each errors.email}}
+  {{#each model.errors.email as |error|}}
+    <div class="error">
+      {{error.message}}
+    </div>
+  {{/each}}
+  ```
+
+  You can also access the special `messages` property on the error
+  object to get an array of all the error strings.
+
+  ```handlebars
+  {{#each model.errors.messages as |message|}}
     <div class="error">
       {{message}}
     </div>
@@ -131,7 +138,8 @@ export default Ember.Object.extend(Ember.Enumerable, Ember.Evented, {
       email: 'invalidEmail'
     });
     user.save().catch(function(){
-      user.get('errors').errorsFor('email'); // ["Doesn't look like a valid email."]
+      user.get('errors').errorsFor('email'); // returns:
+      // [{attribute: "email", message: "Doesn't look like a valid email."}]
     });
     ```
 
@@ -148,7 +156,7 @@ export default Ember.Object.extend(Ember.Enumerable, Ember.Evented, {
     record. This is useful for displaying all errors to the user.
 
     ```handlebars
-    {{#each errors.messages}}
+    {{#each model.errors.messages as |message|}}
       <div class="error">
         {{message}}
       </div>

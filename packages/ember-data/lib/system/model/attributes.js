@@ -3,6 +3,8 @@ import {
   Map
 } from "ember-data/system/map";
 
+import computedPolyfill from "ember-data/utils/computed-polyfill";
+
 /**
   @module ember-data
 */
@@ -216,15 +218,15 @@ function getDefaultValue(record, options, key) {
 }
 
 function hasValue(record, key) {
-  return record._attributes.hasOwnProperty(key) ||
-         record._inFlightAttributes.hasOwnProperty(key) ||
+  return key in record._attributes ||
+         key in record._inFlightAttributes ||
          record._data.hasOwnProperty(key);
 }
 
 function getValue(record, key) {
-  if (record._attributes.hasOwnProperty(key)) {
+  if (key in record._attributes) {
     return record._attributes[key];
-  } else if (record._inFlightAttributes.hasOwnProperty(key)) {
+  } else if (key in record._inFlightAttributes) {
     return record._inFlightAttributes[key];
   } else {
     return record._data[key];
@@ -259,6 +261,21 @@ function getValue(record, key) {
   });
   ```
 
+  Default value can also be a function. This is useful it you want to return
+  a new object for each attribute.
+
+  ```javascript
+  var attr = DS.attr;
+
+  App.User = DS.Model.extend({
+    username: attr('string'),
+    email: attr('string'),
+    settings: attr({defaultValue: function() {
+      return {};
+    }})
+  });
+  ```
+
   @namespace
   @method attr
   @for DS
@@ -268,7 +285,12 @@ function getValue(record, key) {
 */
 
 export default function attr(type, options) {
-  options = options || {};
+  if (typeof type === 'object') {
+    options = type;
+    type = undefined;
+  } else {
+    options = options || {};
+  }
 
   var meta = {
     type: type,
@@ -276,8 +298,15 @@ export default function attr(type, options) {
     options: options
   };
 
-  return Ember.computed(function(key, value) {
-    if (arguments.length > 1) {
+  return computedPolyfill({
+    get: function(key) {
+      if (hasValue(this, key)) {
+        return getValue(this, key);
+      } else {
+        return getDefaultValue(this, options, key);
+      }
+    },
+    set: function(key, value) {
       Ember.assert("You may not set `id` as an attribute on your model. Please remove any lines that look like: `id: DS.attr('<type>')` from " + this.constructor.toString(), key !== 'id');
       var oldValue = getValue(this, key);
 
@@ -295,14 +324,6 @@ export default function attr(type, options) {
       }
 
       return value;
-    } else if (hasValue(this, key)) {
-      return getValue(this, key);
-    } else {
-      return getDefaultValue(this, options, key);
     }
-
-  // `data` is never set directly. However, it may be
-  // invalidated from the state manager's setData
-  // event.
   }).meta(meta);
-};
+}

@@ -247,7 +247,7 @@ var DirtyState = {
     loadingData: Ember.K,
 
     propertyWasReset: function(record, name) {
-      var length = Ember.keys(record._attributes);
+      var length = Ember.keys(record._attributes).length;
       var stillDirty = length > 0;
 
       if (!stillDirty) { record.send('rolledBack'); }
@@ -275,6 +275,7 @@ var DirtyState = {
 
     rollback: function(record) {
       record.rollback();
+      record.triggerLater('ready');
     }
   },
 
@@ -342,6 +343,7 @@ var DirtyState = {
 
     rolledBack: function(record) {
       get(record, 'errors').clear();
+      record.triggerLater('ready');
     },
 
     becameValid: function(record) {
@@ -363,7 +365,8 @@ var DirtyState = {
 // necessary.
 
 function deepClone(object) {
-  var clone = {}, value;
+  var clone = {};
+  var value;
 
   for (var prop in object) {
     value = object[prop];
@@ -407,11 +410,17 @@ var updatedState = dirtyState({
 createdState.uncommitted.deleteRecord = function(record) {
   record.disconnectRelationships();
   record.transitionTo('deleted.saved');
+  record.send('invokeLifecycleCallbacks');
 };
 
 createdState.uncommitted.rollback = function(record) {
   DirtyState.uncommitted.rollback.apply(this, arguments);
   record.transitionTo('deleted.saved');
+};
+
+createdState.uncommitted.pushedData = function(record) {
+  record.transitionTo('loaded.updated.uncommitted');
+  record.triggerLater('didLoad');
 };
 
 createdState.uncommitted.propertyWasReset = Ember.K;
@@ -473,12 +482,13 @@ var RootState = {
 
     loadedData: function(record) {
       record.transitionTo('loaded.created.uncommitted');
-      record.notifyPropertyChange('data');
+      record.triggerLater('ready');
     },
 
     pushedData: function(record) {
       record.transitionTo('loaded.saved');
       record.triggerLater('didLoad');
+      record.triggerLater('ready');
     }
   },
 
@@ -500,6 +510,7 @@ var RootState = {
     pushedData: function(record) {
       record.transitionTo('loaded.saved');
       record.triggerLater('didLoad');
+      record.triggerLater('ready');
       set(record, 'isError', false);
     },
 
@@ -532,14 +543,7 @@ var RootState = {
     saved: {
       setup: function(record) {
         var attrs = record._attributes;
-        var isDirty = false;
-
-        for (var prop in attrs) {
-          if (attrs.hasOwnProperty(prop)) {
-            isDirty = true;
-            break;
-          }
-        }
+        var isDirty = Ember.keys(attrs).length > 0;
 
         if (isDirty) {
           record.adapterDidDirty();
@@ -626,6 +630,7 @@ var RootState = {
 
       rollback: function(record) {
         record.rollback();
+        record.triggerLater('ready');
       },
 
       becomeDirty: Ember.K,
@@ -633,6 +638,7 @@ var RootState = {
 
       rolledBack: function(record) {
         record.transitionTo('loaded.saved');
+        record.triggerLater('ready');
       }
     },
 
@@ -659,6 +665,11 @@ var RootState = {
       becameError: function(record) {
         record.transitionTo('uncommitted');
         record.triggerLater('becameError', record);
+      },
+
+      becameInvalid: function(record) {
+        record.transitionTo('invalid');
+        record.triggerLater('becameInvalid', record);
       }
     },
 
@@ -671,7 +682,7 @@ var RootState = {
 
       setup: function(record) {
         var store = get(record, 'store');
-        store.dematerializeRecord(record);
+        store._dematerializeRecord(record);
       },
 
       invokeLifecycleCallbacks: function(record) {
@@ -682,6 +693,32 @@ var RootState = {
       willCommit: Ember.K,
 
       didCommit: Ember.K
+    },
+
+    invalid: {
+      isValid: false,
+
+      didSetProperty: function(record, context) {
+        get(record, 'errors').remove(context.name);
+
+        didSetProperty(record, context);
+      },
+
+      deleteRecord: Ember.K,
+      becomeDirty: Ember.K,
+      willCommit: Ember.K,
+
+
+      rolledBack: function(record) {
+        get(record, 'errors').clear();
+        record.transitionTo('loaded.saved');
+        record.triggerLater('ready');
+      },
+
+      becameValid: function(record) {
+        record.transitionTo('uncommitted');
+      }
+
     }
   },
 

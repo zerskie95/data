@@ -2,7 +2,7 @@ import {
   typeForRelationshipMeta,
   relationshipFromMeta
 } from "ember-data/system/relationship-meta";
-import { Model } from "ember-data/system/model";
+import Model from "ember-data/system/model";
 import {
   Map,
   MapWithDefault
@@ -10,6 +10,80 @@ import {
 
 var get = Ember.get;
 var filter = Ember.ArrayPolyfills.filter;
+
+var relationshipsDescriptor = Ember.computed(function() {
+  if (Ember.testing === true && relationshipsDescriptor._cacheable === true) {
+    relationshipsDescriptor._cacheable = false;
+  }
+
+  var map = new MapWithDefault({
+    defaultValue: function() { return []; }
+  });
+
+  // Loop through each computed property on the class
+  this.eachComputedProperty(function(name, meta) {
+    // If the computed property is a relationship, add
+    // it to the map.
+    if (meta.isRelationship) {
+      meta.key = name;
+      var relationshipsForType = map.get(typeForRelationshipMeta(this.store, meta));
+
+      relationshipsForType.push({
+        name: name,
+        kind: meta.kind
+      });
+    }
+  });
+
+  return map;
+}).readOnly();
+
+var relatedTypesDescriptor = Ember.computed(function() {
+  if (Ember.testing === true && relatedTypesDescriptor._cacheable === true) {
+    relatedTypesDescriptor._cacheable = false;
+  }
+
+  var typeKey;
+  var types = Ember.A();
+
+  // Loop through each computed property on the class,
+  // and create an array of the unique types involved
+  // in relationships
+  this.eachComputedProperty(function(name, meta) {
+    if (meta.isRelationship) {
+      meta.key = name;
+      typeKey = typeForRelationshipMeta(this.store, meta);
+
+      Ember.assert("You specified a hasMany (" + meta.type + ") on " + meta.parentType + " but " + meta.type + " was not found.", typeKey);
+
+      if (!types.contains(typeKey)) {
+        Ember.assert("Trying to sideload " + name + " on " + this.toString() + " but the type doesn't exist.", !!typeKey);
+        types.push(typeKey);
+      }
+    }
+  });
+
+  return types;
+}).readOnly();
+
+var relationshipsByNameDescriptor = Ember.computed(function() {
+  if (Ember.testing === true && relationshipsByNameDescriptor._cacheable === true) {
+    relationshipsByNameDescriptor._cacheable = false;
+  }
+
+  var map = Map.create();
+
+  this.eachComputedProperty(function(name, meta) {
+    if (meta.isRelationship) {
+      meta.key = name;
+      var relationship = relationshipFromMeta(this.store, meta);
+      relationship.type = typeForRelationshipMeta(this.store, meta);
+      map.set(name, relationship);
+    }
+  });
+
+  return map;
+}).readOnly();
 
 /**
   @module ember-data
@@ -154,11 +228,14 @@ Model.reopenClass({
       return null;
     }
 
+    var propertyMeta = this.metaForProperty(name);
     //If inverse is manually specified to be null, like  `comments: DS.hasMany('message', {inverse: null})`
-    var options = this.metaForProperty(name).options;
+    var options = propertyMeta.options;
     if (options.inverse === null) { return null; }
 
     var inverseName, inverseKind, inverse;
+
+    Ember.warn("Detected a reflexive relationship by the name of '" + name + "' without an inverse option. Look at http://emberjs.com/guides/models/defining-models/#toc_reflexive-relation for how to explicitly specify inverses.", options.inverse || propertyMeta.type !== propertyMeta.parentType.typeKey);
 
     //If inverse is specified manually, return the inverse
     if (options.inverse) {
@@ -207,7 +284,7 @@ Model.reopenClass({
       relationships = filter.call(relationships, function(relationship) {
         var optionsForRelationship = inverseType.metaForProperty(relationship.name).options;
 
-        if (!optionsForRelationship.inverse){
+        if (!optionsForRelationship.inverse) {
           return true;
         }
 
@@ -266,28 +343,8 @@ Model.reopenClass({
     @type Ember.Map
     @readOnly
   */
-  relationships: Ember.computed(function() {
-    var map = new MapWithDefault({
-      defaultValue: function() { return []; }
-    });
 
-    // Loop through each computed property on the class
-    this.eachComputedProperty(function(name, meta) {
-      // If the computed property is a relationship, add
-      // it to the map.
-      if (meta.isRelationship) {
-        meta.key = name;
-        var relationshipsForType = map.get(typeForRelationshipMeta(this.store, meta));
-
-        relationshipsForType.push({
-          name: name,
-          kind: meta.kind
-        });
-      }
-    });
-
-    return map;
-  }).cacheable(false).readOnly(),
+  relationships: relationshipsDescriptor,
 
   /**
     A hash containing lists of the model's relationships, grouped
@@ -361,29 +418,7 @@ Model.reopenClass({
     @type Ember.Array
     @readOnly
   */
-  relatedTypes: Ember.computed(function() {
-    var type;
-    var types = Ember.A();
-
-    // Loop through each computed property on the class,
-    // and create an array of the unique types involved
-    // in relationships
-    this.eachComputedProperty(function(name, meta) {
-      if (meta.isRelationship) {
-        meta.key = name;
-        type = typeForRelationshipMeta(this.store, meta);
-
-        Ember.assert("You specified a hasMany (" + meta.type + ") on " + meta.parentType + " but " + meta.type + " was not found.",  type);
-
-        if (!types.contains(type)) {
-          Ember.assert("Trying to sideload " + name + " on " + this.toString() + " but the type doesn't exist.", !!type);
-          types.push(type);
-        }
-      }
-    });
-
-    return types;
-  }).cacheable(false).readOnly(),
+  relatedTypes: relatedTypesDescriptor,
 
   /**
     A map whose keys are the relationships of a model and whose values are
@@ -416,20 +451,7 @@ Model.reopenClass({
     @type Ember.Map
     @readOnly
   */
-  relationshipsByName: Ember.computed(function() {
-    var map = Map.create();
-
-    this.eachComputedProperty(function(name, meta) {
-      if (meta.isRelationship) {
-        meta.key = name;
-        var relationship = relationshipFromMeta(this.store, meta);
-        relationship.type = typeForRelationshipMeta(this.store, meta);
-        map.set(name, relationship);
-      }
-    });
-
-    return map;
-  }).cacheable(false).readOnly(),
+  relationshipsByName: relationshipsByNameDescriptor,
 
   /**
     A map whose keys are the fields of the model and whose values are strings
@@ -540,6 +562,47 @@ Model.reopen({
     Given a callback, iterates over each of the relationships in the model,
     invoking the callback with the name of each relationship and its relationship
     descriptor.
+
+
+    The callback method you provide should have the following signature (all
+    parameters are optional):
+
+    ```javascript
+    function(name, descriptor);
+    ```
+
+    - `name` the name of the current property in the iteration
+    - `descriptor` the meta object that describes this relationship
+
+    The relationship descriptor argument is an object with the following properties.
+
+   - **key** <span class="type">String</span> the name of this relationship on the Model
+   - **kind** <span class="type">String</span> "hasMany" or "belongsTo"
+   - **options** <span class="type">Object</span> the original options hash passed when the relationship was declared
+   - **parentType** <span class="type">DS.Model</span> the type of the Model that owns this relationship
+   - **type** <span class="type">DS.Model</span> the type of the related Model
+
+    Note that in addition to a callback, you can also pass an optional target
+    object that will be set as `this` on the context.
+
+    Example
+
+    ```javascript
+    App.ApplicationSerializer = DS.JSONSerializer.extend({
+      serialize: function(record, options) {
+        var json = {};
+
+        record.eachRelationship(function(name, descriptor) {
+          if (descriptor.kind === 'hasMany') {
+            var serializedHasManyName = name.toUpperCase() + '_IDS';
+            json[name.toUpperCase()] = record.get(name).mapBy('id');
+          }
+        });
+
+        return json;
+      }
+    });
+    ```
 
     @method eachRelationship
     @param {Function} callback the callback to invoke

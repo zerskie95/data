@@ -1,6 +1,5 @@
 /**
   Ember Data
-
   @module ember-data
   @main ember-data
 */
@@ -8,43 +7,51 @@
 // support RSVP 2.x via resolve,  but prefer RSVP 3.x's Promise.cast
 Ember.RSVP.Promise.cast = Ember.RSVP.Promise.cast || Ember.RSVP.resolve;
 
-import "ember-data/system/create";
+Ember.runInDebug(function() {
+  if (Ember.VERSION.match(/^1\.[0-7]\./)) {
+    throw new Ember.Error("Ember Data requires at least Ember 1.8.0, but you have " +
+                          Ember.VERSION +
+                          ". Please upgrade your version of Ember, then upgrade Ember Data");
+  }
+});
+
 import DS from "ember-data/core";
 import "ember-data/ext/date";
 
 import {
   PromiseArray,
-  PromiseObject
-} from "ember-data/system/promise_proxies";
+  PromiseObject,
+  PromiseManyArray
+} from "ember-data/system/promise-proxies";
 import {
   Store
 } from "ember-data/system/store";
 import {
-  Model,
   Errors,
   RootState,
   attr
 } from "ember-data/system/model";
-import {
-  InvalidError,
-  Adapter
-} from "ember-data/system/adapter";
+import Model from "ember-data/system/model";
+import Snapshot from "ember-data/system/snapshot";
+import { Adapter } from "ember-data/system/adapter";
+import Serializer from "ember-data/system/serializer";
 import DebugAdapter from "ember-data/system/debug";
 import {
   RecordArray,
   FilteredRecordArray,
-  AdapterPopulatedRecordArray,
-  ManyArray
-} from "ember-data/system/record_arrays";
-import RecordArrayManager from "ember-data/system/record_array_manager";
+  AdapterPopulatedRecordArray
+} from "ember-data/system/record-arrays";
+import ManyArray from "ember-data/system/many-array";
+import RecordArrayManager from "ember-data/system/record-array-manager";
 import {
   RESTAdapter,
   FixtureAdapter
 } from "ember-data/adapters";
-import JSONSerializer from "ember-data/serializers/json_serializer";
-import RESTSerializer from "ember-data/serializers/rest_serializer";
+import BuildURLMixin from "ember-data/adapters/build-url-mixin";
+import JSONSerializer from "ember-data/serializers/json-serializer";
+import RESTSerializer from "ember-data/serializers/rest-serializer";
 import "ember-inflector";
-import EmbeddedRecordsMixin from "ember-data/serializers/embedded_records_mixin";
+import EmbeddedRecordsMixin from "ember-data/serializers/embedded-records-mixin";
 import {
   ActiveModelAdapter,
   ActiveModelSerializer
@@ -62,20 +69,27 @@ import {hasMany, belongsTo} from "ember-data/system/relationships";
 import "ember-data/ember-initializer";
 import setupContainer from "ember-data/setup-container";
 
-import ContainerProxy from "ember-data/system/container_proxy";
-import {Relationship} from "ember-data/system/relationships/relationship";
+import ContainerProxy from "ember-data/system/container-proxy";
+import Relationship from "ember-data/system/relationships/state/relationship";
+import InvalidError from "ember-data/system/model/errors/invalid";
 
 DS.Store         = Store;
 DS.PromiseArray  = PromiseArray;
 DS.PromiseObject = PromiseObject;
+
+DS.PromiseManyArray = PromiseManyArray;
 
 DS.Model     = Model;
 DS.RootState = RootState;
 DS.attr      = attr;
 DS.Errors    = Errors;
 
+DS.Snapshot = Snapshot;
+
 DS.Adapter      = Adapter;
 DS.InvalidError = InvalidError;
+
+DS.Serializer = Serializer;
 
 DS.DebugAdapter = DebugAdapter;
 
@@ -87,6 +101,7 @@ DS.ManyArray                   = ManyArray;
 DS.RecordArrayManager = RecordArrayManager;
 
 DS.RESTAdapter    = RESTAdapter;
+DS.BuildURLMixin  = BuildURLMixin;
 DS.FixtureAdapter = FixtureAdapter;
 
 DS.RESTSerializer = RESTSerializer;

@@ -1,7 +1,10 @@
 import RootState from "ember-data/system/model/states";
 import Errors from "ember-data/system/model/errors";
-import { PromiseObject } from "ember-data/system/promise_proxies";
-import { createRelationshipFor } from "ember-data/system/relationships/relationship";
+import { PromiseObject } from "ember-data/system/promise-proxies";
+import merge from "ember-data/system/merge";
+import JSONSerializer from "ember-data/serializers/json-serializer";
+import createRelationshipFor from "ember-data/system/relationships/state/create";
+import Snapshot from "ember-data/system/snapshot";
 
 /**
   @module ember-data
@@ -9,13 +12,15 @@ import { createRelationshipFor } from "ember-data/system/relationships/relations
 
 var get = Ember.get;
 var set = Ember.set;
-var merge = Ember.merge;
 var Promise = Ember.RSVP.Promise;
 var forEach = Ember.ArrayPolyfills.forEach;
 var map = Ember.ArrayPolyfills.map;
+var intersection = Ember.EnumerableUtils.intersection;
+var RESERVED_MODEL_PROPS = [
+  'currentState', 'data', 'store'
+];
 
-var JSONSerializer;
-var retrieveFromCurrentState = Ember.computed('currentState', function(key, value) {
+var retrieveFromCurrentState = Ember.computed('currentState', function(key) {
   return get(get(this, 'currentState'), key);
 }).readOnly();
 
@@ -34,6 +39,33 @@ function extractPivotName(name) {
   );
 }
 
+// Like Ember.merge, but instead returns a list of keys
+// for values that fail a strict equality check
+// instead of the original object.
+function mergeAndReturnChangedKeys(original, updates) {
+  var changedKeys = [];
+
+  if (!updates || typeof updates !== 'object') {
+    return changedKeys;
+  }
+
+  var keys   = Ember.keys(updates);
+  var length = keys.length;
+  var i, val, key;
+
+  for (i = 0; i < length; i++) {
+    key = keys[i];
+    val = updates[key];
+
+    if (original[key] !== val) {
+      changedKeys.push(key);
+    }
+
+    original[key] = val;
+  }
+  return changedKeys;
+}
+
 /**
 
   The model class that all Ember Data records descend from.
@@ -46,7 +78,9 @@ function extractPivotName(name) {
 var Model = Ember.Object.extend(Ember.Evented, {
   _recordArrays: undefined,
   _relationships: undefined,
-  _loadingRecordArrays: undefined,
+
+  store: null,
+
   /**
     If this property is `true` the record is in the `empty`
     state. Empty is the first state all records enter after they have
@@ -313,15 +347,49 @@ var Model = Ember.Object.extend(Ember.Evented, {
   /**
     When the record is in the `invalid` state this object will contain
     any errors returned by the adapter. When present the errors hash
-    typically contains keys corresponding to the invalid property names
-    and values which are an array of error messages.
+    contains keys corresponding to the invalid property names
+    and values which are arrays of Javascript objects with two keys:
+
+    - `message` A string containing the error message from the backend
+    - `attribute` The name of the property associated with this error message
 
     ```javascript
     record.get('errors.length'); // 0
     record.set('foo', 'invalid value');
-    record.save().then(null, function() {
-      record.get('errors').get('foo'); // ['foo should be a number.']
+    record.save().catch(function() {
+      record.get('errors').get('foo');
+      // [{message: 'foo should be a number.', attribute: 'foo'}]
     });
+    ```
+
+    The `errors` property us useful for displaying error messages to
+    the user.
+
+    ```handlebars
+    <label>Username: {{input value=username}} </label>
+    {{#each model.errors.username as |error|}}
+      <div class="error">
+        {{error.message}}
+      </div>
+    {{/each}}
+    <label>Email: {{input value=email}} </label>
+    {{#each model.errors.email as |error|}}
+      <div class="error">
+        {{error.message}}
+      </div>
+    {{/each}}
+    ```
+
+
+    You can also access the special `messages` property on the error
+    object to get an array of all the error strings.
+
+    ```handlebars
+    {{#each model.errors.messages as |message|}}
+      <div class="error">
+        {{message}}
+      </div>
+    {{/each}}
     ```
 
     @property errors
@@ -354,8 +422,7 @@ var Model = Ember.Object.extend(Ember.Evented, {
     @return {Object} an object whose values are primitive JSON values only
   */
   serialize: function(options) {
-    var store = get(this, 'store');
-    return store.serialize(this, options);
+    return this.store.serialize(this, options);
   },
 
   /**
@@ -373,12 +440,22 @@ var Model = Ember.Object.extend(Ember.Evented, {
     @return {Object} A JSON representation of the object.
   */
   toJSON: function(options) {
-    if (!JSONSerializer) { JSONSerializer = requireModule("ember-data/serializers/json_serializer")["default"]; }
     // container is for lazy transform lookups
     var serializer = JSONSerializer.create({ container: this.container });
-    return serializer.serialize(this, options);
+    var snapshot = this._createSnapshot();
+
+    return serializer.serialize(snapshot, options);
   },
 
+  /**
+    Fired when the record is ready to be interacted with,
+    that is either loaded from the server or created locally.
+
+    @event ready
+  */
+  ready: function() {
+    this.store.recordArrayManager.recordWasLoaded(this);
+  },
   /**
     Fired when the record is loaded from the server.
 
@@ -394,7 +471,7 @@ var Model = Ember.Object.extend(Ember.Evented, {
   didUpdate: Ember.K,
 
   /**
-    Fired when the record is created.
+    Fired when a new record is commited to the server.
 
     @event didCreate
   */
@@ -422,6 +499,13 @@ var Model = Ember.Object.extend(Ember.Evented, {
   becameError: Ember.K,
 
   /**
+    Fired when the record is rolled back.
+
+    @event rolledBack
+  */
+  rolledBack: Ember.K,
+
+  /**
     @property data
     @private
     @type {Object}
@@ -434,7 +518,7 @@ var Model = Ember.Object.extend(Ember.Evented, {
   _data: null,
 
   init: function() {
-    this._super();
+    this._super.apply(this, arguments);
     this._setup();
   },
 
@@ -442,8 +526,8 @@ var Model = Ember.Object.extend(Ember.Evented, {
     this._changesToSync = {};
     this._deferredTriggers = [];
     this._data = {};
-    this._attributes = {};
-    this._inFlightAttributes = {};
+    this._attributes = Ember.create(null);
+    this._inFlightAttributes = Ember.create(null);
     this._relationships = {};
     /*
       implicit relationships are relationship which have not been declared but the inverse side exists on
@@ -469,7 +553,7 @@ var Model = Ember.Object.extend(Ember.Evented, {
     var model = this;
     //TODO Move into a getter for better perf
     this.constructor.eachRelationship(function(key, descriptor) {
-        model._relationships[key] = createRelationshipFor(model, descriptor, model.store);
+      model._relationships[key] = createRelationshipFor(model, descriptor, model.store);
     });
 
   },
@@ -509,7 +593,9 @@ var Model = Ember.Object.extend(Ember.Evented, {
     } while (!state.hasOwnProperty(pivotName));
 
     var path = splitOnDot(name);
-    var setups = [], enters = [], i, l;
+    var setups = [];
+    var enters = [];
+    var i, l;
 
     for (i=0, l=path.length; i<l; i++) {
       state = state[path[i]];
@@ -655,12 +741,17 @@ var Model = Ember.Object.extend(Ember.Evented, {
   clearRelationships: function() {
     this.eachRelationship(function(name, relationship) {
       var rel = this._relationships[name];
-      if (rel){
+      if (rel) {
         //TODO(Igor) figure out whether we want to clear or disconnect
         rel.clear();
         rel.destroy();
       }
     }, this);
+    var model = this;
+    forEach.call(Ember.keys(this._implicitRelationships), function(key) {
+      model._implicitRelationships[key].clear();
+      model._implicitRelationships[key].destroy();
+    });
   },
 
   disconnectRelationships: function() {
@@ -690,7 +781,7 @@ var Model = Ember.Object.extend(Ember.Evented, {
   */
   updateRecordArrays: function() {
     this._updatingRecordArraysLater = false;
-    get(this, 'store').dataWasUpdated(this.constructor, this);
+    this.store.dataWasUpdated(this.constructor, this);
   },
 
   /**
@@ -725,7 +816,7 @@ var Model = Ember.Object.extend(Ember.Evented, {
   _preloadRelationship: function(key, preloadValue) {
     var relationshipMeta = this.constructor.metaForProperty(key);
     var type = relationshipMeta.type;
-    if (relationshipMeta.kind === 'hasMany'){
+    if (relationshipMeta.kind === 'hasMany') {
       this._preloadHasMany(key, preloadValue, type);
     } else {
       this._preloadBelongsTo(key, preloadValue, type);
@@ -744,7 +835,7 @@ var Model = Ember.Object.extend(Ember.Evented, {
     this._relationships[key].updateRecordsFromAdapter(recordsToSet);
   },
 
-  _preloadBelongsTo: function(key, preloadValue, type){
+  _preloadBelongsTo: function(key, preloadValue, type) {
     var recordToSet = this._convertStringOrNumberIntoRecord(preloadValue, type);
 
     //We use the pathway of setting the hasMany as if it came from the adapter
@@ -753,7 +844,7 @@ var Model = Ember.Object.extend(Ember.Evented, {
   },
 
   _convertStringOrNumberIntoRecord: function(value, type) {
-    if (Ember.typeOf(value) === 'string' || Ember.typeOf(value) === 'number'){
+    if (Ember.typeOf(value) === 'string' || Ember.typeOf(value) === 'number') {
       return this.store.recordForId(type, value);
     }
     return value;
@@ -766,7 +857,7 @@ var Model = Ember.Object.extend(Ember.Evented, {
   _notifyProperties: function(keys) {
     Ember.beginPropertyChanges();
     var key;
-    for (var i = 0, length = keys.length; i < length; i++){
+    for (var i = 0, length = keys.length; i < length; i++) {
       key = keys[i];
       this.notifyPropertyChange(key);
     }
@@ -823,22 +914,23 @@ var Model = Ember.Object.extend(Ember.Evented, {
     @method adapterDidCommit
   */
   adapterDidCommit: function(data) {
+    var changedKeys;
     set(this, 'isError', false);
 
     if (data) {
-      this._data = data;
+      changedKeys = mergeAndReturnChangedKeys(this._data, data);
     } else {
-      Ember.mixin(this._data, this._inFlightAttributes);
+      merge(this._data, this._inFlightAttributes);
     }
 
-    this._inFlightAttributes = {};
+    this._inFlightAttributes = Ember.create(null);
 
     this.send('didCommit');
     this.updateRecordArraysLater();
 
     if (!data) { return; }
 
-    this._notifyProperties(Ember.keys(data));
+    this._notifyProperties(changedKeys);
   },
 
   /**
@@ -867,21 +959,15 @@ var Model = Ember.Object.extend(Ember.Evented, {
     @method setupData
     @private
     @param {Object} data
-    @param {Boolean} partial the data should be merged into
-      the existing data, not replace it.
   */
-  setupData: function(data, partial) {
+  setupData: function(data) {
     Ember.assert("Expected an object as `data` in `setupData`", Ember.typeOf(data) === 'object');
 
-    if (partial) {
-      Ember.merge(this._data, data);
-    } else {
-      this._data = data;
-    }
+    var changedKeys = mergeAndReturnChangedKeys(this._data, data);
 
     this.pushedData();
 
-    this._notifyProperties(Ember.keys(data));
+    this._notifyProperties(changedKeys);
   },
 
   materializeId: function(id) {
@@ -889,7 +975,7 @@ var Model = Ember.Object.extend(Ember.Evented, {
   },
 
   materializeAttributes: function(attributes) {
-    Ember.assert("Must pass a hash of attributes to materializeAttributes", !!attributes);
+    Ember.assert("Must pass an object to materializeAttributes", !!attributes);
     merge(this._data, attributes);
   },
 
@@ -914,10 +1000,12 @@ var Model = Ember.Object.extend(Ember.Evented, {
     @method rollback
   */
   rollback: function() {
-    this._attributes = {};
+    var dirtyKeys = Ember.keys(this._attributes);
+
+    this._attributes = Ember.create(null);
 
     if (get(this, 'isError')) {
-      this._inFlightAttributes = {};
+      this._inFlightAttributes = Ember.create(null);
       set(this, 'isError', false);
     }
 
@@ -933,13 +1021,20 @@ var Model = Ember.Object.extend(Ember.Evented, {
     }
 
     if (!get(this, 'isValid')) {
-      this._inFlightAttributes = {};
+      this._inFlightAttributes = Ember.create(null);
     }
 
     this.send('rolledBack');
 
-    this._notifyProperties(Ember.keys(this._data));
+    this._notifyProperties(dirtyKeys);
+  },
 
+  /**
+    @method _createSnapshot
+    @private
+  */
+  _createSnapshot: function() {
+    return new Snapshot(this);
   },
 
   toStringExtension: function() {
@@ -954,7 +1049,7 @@ var Model = Ember.Object.extend(Ember.Evented, {
 
     ```javascript
     record.set('name', 'Tomster');
-    record.save().then(function(){
+    record.save().then(function() {
       // Success callback
     }, function() {
       // Error callback
@@ -968,9 +1063,9 @@ var Model = Ember.Object.extend(Ember.Evented, {
     var promiseLabel = "DS: Model#save " + this;
     var resolver = Ember.RSVP.defer(promiseLabel);
 
-    this.get('store').scheduleSave(this, resolver);
+    this.store.scheduleSave(this, resolver);
     this._inFlightAttributes = this._attributes;
-    this._attributes = {};
+    this._attributes = Ember.create(null);
 
     return PromiseObject.create({
       promise: resolver.promise
@@ -1008,16 +1103,16 @@ var Model = Ember.Object.extend(Ember.Evented, {
 
     var record = this;
     var promiseLabel = "DS: Model#reload of " + this;
-    var promise = new Promise(function(resolve){
-       record.send('reloadRecord', resolve);
+    var promise = new Promise(function(resolve) {
+      record.send('reloadRecord', resolve);
     }, promiseLabel).then(function() {
-      record.set('isReloading', false);
       record.set('isError', false);
       return record;
     }, function(reason) {
       record.set('isError', true);
       throw reason;
     }, "DS: Model#reload complete, update flags")['finally'](function () {
+      record.set('isReloading', false);
       record.updateRecordArrays();
     });
 
@@ -1028,36 +1123,19 @@ var Model = Ember.Object.extend(Ember.Evented, {
 
   // FOR USE DURING COMMIT PROCESS
 
-  adapterDidUpdateAttribute: function(attributeName, value) {
-
-    // If a value is passed in, update the internal attributes and clear
-    // the attribute cache so it picks up the new value. Otherwise,
-    // collapse the current value into the internal attributes because
-    // the adapter has acknowledged it.
-    if (value !== undefined) {
-      this._data[attributeName] = value;
-      this.notifyPropertyChange(attributeName);
-    } else {
-      this._data[attributeName] = this._inFlightAttributes[attributeName];
-    }
-
-    this.updateRecordArraysLater();
-  },
-
   /**
     @method adapterDidInvalidate
     @private
   */
   adapterDidInvalidate: function(errors) {
     var recordErrors = get(this, 'errors');
-    function addError(name) {
-      if (errors[name]) {
-        recordErrors.add(name, errors[name]);
+    for (var key in errors) {
+      if (!errors.hasOwnProperty(key)) {
+        continue;
       }
+      recordErrors.add(key, errors[key]);
     }
-
-    this.eachAttribute(addError);
-    this.eachRelationship(addError);
+    this._saveWasRejected();
   },
 
   /**
@@ -1067,6 +1145,17 @@ var Model = Ember.Object.extend(Ember.Evented, {
   adapterDidError: function() {
     this.send('becameError');
     set(this, 'isError', true);
+    this._saveWasRejected();
+  },
+
+  _saveWasRejected: function() {
+    var keys = Ember.keys(this._inFlightAttributes);
+    for (var i=0; i < keys.length; i++) {
+      if (this._attributes[keys[i]] === undefined) {
+        this._attributes[keys[i]] = this._inFlightAttributes[keys[i]];
+      }
+    }
+    this._inFlightAttributes = Ember.create(null);
   },
 
   /**
@@ -1082,7 +1171,7 @@ var Model = Ember.Object.extend(Ember.Evented, {
     var args = new Array(length - 1);
     var name = arguments[0];
 
-    for (var i = 1; i < length; i++ ){
+    for (var i = 1; i < length; i++) {
       args[i - 1] = arguments[i];
     }
 
@@ -1094,7 +1183,7 @@ var Model = Ember.Object.extend(Ember.Evented, {
     var length = arguments.length;
     var args = new Array(length);
 
-    for (var i = 0; i < length; i++ ){
+    for (var i = 0; i < length; i++) {
       args[i] = arguments[i];
     }
 
@@ -1113,14 +1202,27 @@ var Model = Ember.Object.extend(Ember.Evented, {
   },
 
   willDestroy: function() {
-    this._super();
+    this._super.apply(this, arguments);
     this.clearRelationships();
   },
 
   // This is a temporary solution until we refactor DS.Model to not
   // rely on the data property.
   willMergeMixin: function(props) {
-    Ember.assert('`data` is a reserved property name on DS.Model objects. Please choose a different property name for ' + this.constructor.toString(), !props.data);
+    var constructor = this.constructor;
+    Ember.assert('`' + intersection(Ember.keys(props), RESERVED_MODEL_PROPS)[0] + '` is a reserved property name on DS.Model objects. Please choose a different property name for ' + constructor.toString(), !intersection(Ember.keys(props), RESERVED_MODEL_PROPS)[0]);
+  },
+
+  attr: function() {
+    Ember.assert("The `attr` method is not available on DS.Model, a DS.Snapshot was probably expected. Are you passing a DS.Model instead of a DS.Snapshot to your serializer?", false);
+  },
+
+  belongsTo: function() {
+    Ember.assert("The `belongsTo` method is not available on DS.Model, a DS.Snapshot was probably expected. Are you passing a DS.Model instead of a DS.Snapshot to your serializer?", false);
+  },
+
+  hasMany: function() {
+    Ember.assert("The `hasMany` method is not available on DS.Model, a DS.Snapshot was probably expected. Are you passing a DS.Model instead of a DS.Snapshot to your serializer?", false);
   }
 });
 
