@@ -3,12 +3,12 @@
 */
 
 import JSONSerializer from "ember-data/serializers/json-serializer";
+import normalizeModelName from "ember-data/system/normalize-model-name";
+import {singularize} from "ember-inflector/lib/system/string";
 
 var forEach = Ember.ArrayPolyfills.forEach;
 var map = Ember.ArrayPolyfills.map;
 var camelize = Ember.String.camelize;
-
-import { singularize } from "ember-inflector/lib/system/string";
 
 function coerceId(id) {
   return id == null ? null : id + '';
@@ -256,25 +256,25 @@ var RESTSerializer = JSONSerializer.extend({
 
     @method extractSingle
     @param {DS.Store} store
-    @param {subclass of DS.Model} primaryTypeClasss
+    @param {subclass of DS.Model} primaryTypeClass
     @param {Object} payload
     @param {String} recordId
     @return {Object} the primary response to the original request
   */
   extractSingle: function(store, primaryTypeClass, rawPayload, recordId) {
     var payload = this.normalizePayload(rawPayload);
-    var primaryTypeClassName = primaryTypeClass.typeKey;
+    var primaryTypeClassName = primaryTypeClass.modelName;
     var primaryRecord;
 
     for (var prop in payload) {
-      var typeName  = this.typeForRoot(prop);
+      var typeName  = this.modelNameFromPayloadKey(prop);
 
       if (!store.modelFactoryFor(typeName)) {
         Ember.warn(this.warnMessageNoModelForKey(prop, typeName), false);
         continue;
       }
       var type = store.modelFor(typeName);
-      var isPrimary = type.typeKey === primaryTypeClassName;
+      var isPrimary = type.modelName === primaryTypeClassName;
       var value = payload[prop];
 
       if (value === null) {
@@ -289,7 +289,7 @@ var RESTSerializer = JSONSerializer.extend({
 
       /*jshint loopfunc:true*/
       forEach.call(value, function(hash) {
-        var typeName = this.typeForRoot(prop);
+        var typeName = this.modelNameFromPayloadKey(prop);
         var type = store.modelFor(typeName);
         var typeSerializer = store.serializerFor(type);
 
@@ -417,26 +417,26 @@ var RESTSerializer = JSONSerializer.extend({
   */
   extractArray: function(store, primaryTypeClass, rawPayload) {
     var payload = this.normalizePayload(rawPayload);
-    var primaryTypeClassName = primaryTypeClass.typeKey;
+    var primaryTypeClassName = primaryTypeClass.modelName;
     var primaryArray;
 
     for (var prop in payload) {
-      var typeKey = prop;
+      var modelName = prop;
       var forcedSecondary = false;
 
       if (prop.charAt(0) === '_') {
         forcedSecondary = true;
-        typeKey = prop.substr(1);
+        modelName = prop.substr(1);
       }
 
-      var typeName = this.typeForRoot(typeKey);
+      var typeName = this.modelNameFromPayloadKey(modelName);
       if (!store.modelFactoryFor(typeName)) {
         Ember.warn(this.warnMessageNoModelForKey(prop, typeName), false);
         continue;
       }
       var type = store.modelFor(typeName);
       var typeSerializer = store.serializerFor(type);
-      var isPrimary = (!forcedSecondary && (type.typeKey === primaryTypeClassName));
+      var isPrimary = (!forcedSecondary && (type.modelName === primaryTypeClassName));
 
       /*jshint loopfunc:true*/
       var normalizedArray = map.call(payload[prop], function(hash) {
@@ -488,12 +488,12 @@ var RESTSerializer = JSONSerializer.extend({
     var payload = this.normalizePayload(rawPayload);
 
     for (var prop in payload) {
-      var typeKey = this.typeForRoot(prop);
-      if (!store.modelFactoryFor(typeKey, prop)) {
-        Ember.warn(this.warnMessageNoModelForKey(prop, typeKey), false);
+      var modelName = this.modelNameFromPayloadKey(prop);
+      if (!store.modelFactoryFor(modelName)) {
+        Ember.warn(this.warnMessageNoModelForKey(prop, modelName), false);
         continue;
       }
-      var type = store.modelFor(typeKey);
+      var type = store.modelFor(modelName);
       var typeSerializer = store.serializerFor(type);
 
       /*jshint loopfunc:true*/
@@ -501,55 +501,70 @@ var RESTSerializer = JSONSerializer.extend({
         return typeSerializer.normalize(type, hash, prop);
       }, this);
 
-      store.pushMany(typeKey, normalizedArray);
+      store.pushMany(modelName, normalizedArray);
     }
   },
 
   /**
     This method is used to convert each JSON root key in the payload
-    into a typeKey that it can use to look up the appropriate model for
-    that part of the payload. By default the typeKey for a model is its
-    name in camelCase, so if your JSON root key is 'fast-car' you would
-    use typeForRoot to convert it to 'fastCar' so that Ember Data finds
-    the `FastCar` model.
+    into a modelName that it can use to look up the appropriate model for
+    that part of the payload.
 
-    If you diverge from this norm you should also consider changes to
-    store._normalizeTypeKey as well.
+    For example, your server may send a model name that does not correspond with
+    the name of the model in your app. Let's take a look at an example model,
+    and an example payload:
 
-    For example, your server may return prefixed root keys like so:
-
-    ```js
-    {
-      "response-fast-car": {
-        "id": "1",
-        "name": "corvette"
-      }
-    }
+    ```javascript
+    // Located in the file app/models/post.js
+    import DS from 'ember-data';
+    export default var Post = DS.Model.extend();
     ```
 
-    In order for Ember Data to know that the model corresponding to
-    the 'response-fast-car' hash is `FastCar` (typeKey: 'fastCar'),
-    you can override typeForRoot to convert 'response-fast-car' to
-    'fastCar' like so:
+    ```javascript
+      {
+        "blog/post": {
+          "id": "1
+        }
+      }
+    ```
 
-    ```js
-    App.ApplicationSerializer = DS.RESTSerializer.extend({
-      typeForRoot: function(root) {
-        // 'response-fast-car' should become 'fast-car'
-        var subRoot = root.substring(9);
+    Ember Data is going to normalize the payload's root key for the modelName. As a result,
+    it will try to look up the "blog/post" model. Since we don't have a model called "blog/post"
+    (or a file called app/models/blog/post.js in ember-cli), Ember Data will throw an error
+    because it cannot find the "blog/post" model.
 
-        // _super normalizes 'fast-car' to 'fastCar'
-        return this._super(subRoot);
+    Since we want to remove this namespace, we can define a serializer for the application that will
+    remove "blog/" from the payload key whenver it's encountered by Ember Data:
+
+    ```javascript
+    // located in app/serializers/application.js
+    import DS from 'ember-data';
+
+    export default DS.RESTSerializer.extend({
+      modelNameFromPayloadKey: function(payloadKey) {
+        if (payloadKey === 'blog/post') {
+          return this._super(payloadKey.replace('blog/', ''));
+        } else {
+         return this._super(payloadKey);
+        }
       }
     });
     ```
 
-    @method typeForRoot
+    After refreshing, Ember Data will appropriately look up the "post" model.
+
+    By default the modelName for a model is its
+    name in dasherized form. This means that a payload key like "blogPost" would be
+    normalized to "blog-post" when Ember Data looks up the model. Usually, Ember Data
+    can use the correct inflection to do this for you. Most of the time, you won't
+    need to override `modelNameFromPayloadKey` for this purpose.
+
+    @method modelNameFromPayloadKey
     @param {String} key
-    @return {String} the model's typeKey
+    @return {String} the model's modelName
   */
-  typeForRoot: function(key) {
-    return camelize(singularize(key));
+  modelNameFromPayloadKey: function(key) {
+    return singularize(normalizeModelName(key));
   },
 
   // SERIALIZE
@@ -703,7 +718,7 @@ var RESTSerializer = JSONSerializer.extend({
 
   /**
     You can use this method to customize the root keys serialized into the JSON.
-    By default the REST Serializer sends the typeKey of a model, which is a camelized
+    By default the REST Serializer sends the modelName of a model, which is a camelized
     version of the name.
 
     For example, your server may expect underscored root objects.
@@ -711,7 +726,7 @@ var RESTSerializer = JSONSerializer.extend({
     ```js
     App.ApplicationSerializer = DS.RESTSerializer.extend({
       serializeIntoHash: function(data, type, record, options) {
-        var root = Ember.String.decamelize(type.typeKey);
+        var root = Ember.String.decamelize(type.modelName);
         data[root] = this.serialize(record, options);
       }
     });
@@ -724,7 +739,68 @@ var RESTSerializer = JSONSerializer.extend({
     @param {Object} options
   */
   serializeIntoHash: function(hash, typeClass, snapshot, options) {
-    hash[typeClass.typeKey] = this.serialize(snapshot, options);
+    var normalizedRootKey = this.payloadKeyFromModelName(typeClass.modelName);
+    hash[normalizedRootKey] = this.serialize(snapshot, options);
+  },
+
+  /**
+    You can use `payloadKeyFromModelName` to override the root key for an outgoing
+    request. By default, the RESTSerializer returns a camelized version of the
+    model's name.
+
+    For a model called TacoParty, its `modelName` would be the string `taco-party`. The RESTSerializer
+    will send it to the server with `tacoParty` as the root key in the JSON payload:
+
+    ```js
+    {
+      "tacoParty": {
+        "id": "1",
+        "location": "Matthew Beale's House"
+      }
+    }
+    ```
+
+    For example, your server may expect dasherized root objects:
+
+    ```js
+    App.ApplicationSerializer = DS.RESTSerializer.extend({
+      payloadKeyFromModelName: function(modelName) {
+        return Ember.String.dasherize(modelName);
+      }
+    });
+    ```
+
+    Given a `TacoParty' model, calling `save` on a tacoModel would produce an outgoing
+    request like:
+
+    ```js
+    {
+      "taco-party": {
+        "id": "1",
+        "location": "Matthew Beale's House"
+      }
+    }
+    ```
+
+    @method payloadKeyFromModelName
+    @param {String} modelName
+    @returns {String}
+  */
+  payloadKeyFromModelName: function(modelName) {
+    return camelize(modelName);
+  },
+
+  /**
+   Deprecated. Use payloadKeyFromModelName instead
+
+    @method typeForRoot
+    @param {String} modelName
+    @returns {String}
+    @deprecated
+  */
+  typeForRoot: function(modelName) {
+    Ember.deprecate("typeForRoot is deprecated. Use modelNameFromPayloadKey instead.");
+    return this.modelNameFromPayloadKey(modelName);
   },
 
   /**
@@ -744,15 +820,15 @@ var RESTSerializer = JSONSerializer.extend({
     if (Ember.isNone(belongsTo)) {
       json[key + "Type"] = null;
     } else {
-      json[key + "Type"] = Ember.String.camelize(belongsTo.typeKey);
+      json[key + "Type"] = Ember.String.camelize(belongsTo.modelName);
     }
   }
 });
 
 Ember.runInDebug(function() {
   RESTSerializer.reopen({
-    warnMessageNoModelForKey: function(prop, typeKey) {
-      return 'Encountered "' + prop + '" in payload, but no model was found for model name "' + typeKey + '" (resolved model name using ' + this.constructor.toString() + '.typeForRoot("' + prop + '"))';
+    warnMessageNoModelForKey: function(prop, modelName) {
+      return 'Encountered "' + prop + '" in payload, but no model was found for model name "' + modelName + '" (resolved model name using ' + this.constructor.toString() + '.typeForRoot("' + prop + '"))';
     }
   });
 });
