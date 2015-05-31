@@ -83,12 +83,14 @@
 
     registry.register('serializer:-default', DS.JSONSerializer);
     registry.register('serializer:-rest', DS.RESTSerializer);
+    registry.register('serializer:-rest2', DS.REST2Serializer);
     registry.register('adapter:-rest', DS.RESTAdapter);
 
     registry.injection('serializer', 'store', 'store:main');
 
     env.serializer = container.lookup('serializer:-default');
     env.restSerializer = container.lookup('serializer:-rest');
+    env.rest2Serializer = container.lookup('serializer:-rest2');
     env.store = container.lookup('store:main');
     env.adapter = env.store.get('defaultAdapter');
 
