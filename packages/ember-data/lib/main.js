@@ -56,6 +56,7 @@ import RESTSerializer from "ember-data/serializers/rest-serializer";
 import REST2Serializer from "ember-data/serializers/rest2-serializer";
 import "ember-inflector";
 import EmbeddedRecordsMixin from "ember-data/serializers/embedded-records-mixin";
+import EmbeddedRecords2Mixin from "ember-data/serializers/embedded-records2-mixin";
 import {
   ActiveModelAdapter,
   ActiveModelSerializer
@@ -121,6 +122,7 @@ DS.BooleanTransform = BooleanTransform;
 DS.ActiveModelAdapter    = ActiveModelAdapter;
 DS.ActiveModelSerializer = ActiveModelSerializer;
 DS.EmbeddedRecordsMixin  = EmbeddedRecordsMixin;
+DS.EmbeddedRecords2Mixin  = EmbeddedRecords2Mixin;
 
 DS.belongsTo = belongsTo;
 DS.hasMany   = hasMany;
