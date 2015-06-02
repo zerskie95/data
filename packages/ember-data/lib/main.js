@@ -52,6 +52,7 @@ import {
 } from "ember-data/adapters";
 import BuildURLMixin from "ember-data/adapters/build-url-mixin";
 import JSONSerializer from "ember-data/serializers/json-serializer";
+import JSON2Serializer from "ember-data/serializers/json2-serializer";
 import RESTSerializer from "ember-data/serializers/rest-serializer";
 import REST2Serializer from "ember-data/serializers/rest2-serializer";
 import "ember-inflector";
@@ -113,6 +114,7 @@ DS.BuildURLMixin  = BuildURLMixin;
 DS.RESTSerializer = RESTSerializer;
 DS.REST2Serializer = REST2Serializer;
 DS.JSONSerializer = JSONSerializer;
+DS.JSON2Serializer = JSON2Serializer;
 
 DS.Transform       = Transform;
 DS.DateTransform   = DateTransform;
