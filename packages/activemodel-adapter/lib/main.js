@@ -1,9 +1,11 @@
 import {
   ActiveModelAdapter,
-  ActiveModelSerializer
+  ActiveModelSerializer,
+  ActiveModel2Serializer
 } from "activemodel-adapter/system";
 
 export {
   ActiveModelAdapter,
-  ActiveModelSerializer
+  ActiveModelSerializer,
+  ActiveModel2Serializer
 };

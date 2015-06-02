@@ -59,7 +59,8 @@ import EmbeddedRecordsMixin from "ember-data/serializers/embedded-records-mixin"
 import EmbeddedRecords2Mixin from "ember-data/serializers/embedded-records2-mixin";
 import {
   ActiveModelAdapter,
-  ActiveModelSerializer
+  ActiveModelSerializer,
+  ActiveModel2Serializer
 } from "activemodel-adapter";
 
 import {
@@ -121,6 +122,8 @@ DS.BooleanTransform = BooleanTransform;
 
 DS.ActiveModelAdapter    = ActiveModelAdapter;
 DS.ActiveModelSerializer = ActiveModelSerializer;
+DS.ActiveModel2Serializer = ActiveModel2Serializer;
+
 DS.EmbeddedRecordsMixin  = EmbeddedRecordsMixin;
 DS.EmbeddedRecords2Mixin  = EmbeddedRecords2Mixin;
 
