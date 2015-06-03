@@ -492,7 +492,7 @@ test('normalize should allow for different levels of normalization', function() 
     attrs: {
       superVillain: 'is_super_villain'
     },
-    keyForAttribute: function(attr) {
+    keyForRelationship: function(attr) {
       return Ember.String.decamelize(attr);
     }
   }));
