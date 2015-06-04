@@ -93,7 +93,7 @@ var packages = merge([
 
 var globalBuild;
 
-packages = babel(packages, babelOptions);
+var transpiledPackages = babel(packages, babelOptions);
 
 // Bundle formatter for smaller payload
 if (env === 'production') {
@@ -120,7 +120,7 @@ if (env === 'production') {
     outputFile: '/ember-data.js'
   });
 
-  globalBuild = merge([emberData, testTree(packages, compiled)]);
+  globalBuild = merge([emberData, testTree(packages, transpiledPackages)]);
 }
 
 var testRunner = pickFiles('tests', {
